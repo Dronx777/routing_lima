@@ -143,12 +143,15 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 L.control.zoom({position:'bottomleft'}).addTo(map);
 
-// Слои
+// Слои (активные по умолчанию)
 let csvMarkersLayer = L.layerGroup().addTo(map);
 let routeLayer = L.layerGroup().addTo(map);
 let remainingRouteLayer = L.layerGroup().addTo(map);
 let polygonLayer = L.layerGroup().addTo(map);
-let pointsPartLayer = L.layerGroup().addTo(map);
+
+// Слои GeoJSON точек (НЕ добавляются на карту по умолчанию)
+let pointsPartLayer = L.layerGroup();
+let pointsPart2Layer = L.layerGroup();
 
 // Переключатель слоев
 const overlays = {
@@ -156,7 +159,8 @@ const overlays = {
   "Основной маршрут": routeLayer,
   "Навигация": remainingRouteLayer,
   "H3 Гексагоны (корень)": polygonLayer,
-  "Точки (1_part)": pointsPartLayer
+  "Точки (1_part)": pointsPartLayer,
+  "Точки (2_part)": pointsPart2Layer
 };
 const layerControl = L.control.layers(null, overlays, {collapsed: true});
 layerControl.addTo(map);
@@ -202,7 +206,7 @@ fetch('hex.geojson')
     console.warn('Автозагрузка hex.geojson недоступна или файл отсутствует:', err);
   });
 
-// ===== РЕНДЕР И АВТОЗАГРУЗКА 1_part.geojson (ОТОБРАЖЕНИЕ ТОЛЬКО from_address, cnt) =====
+// ===== РЕНДЕР И АВТОЗАГРУЗКА 1_part.geojson (ЗЕЛЕНЫЕ КРУЖОЧКИ, ВЫКЛ ПО УМОЛЧАНИЮ) =====
 function render1PartGeoJson(geoData) {
   pointsPartLayer.clearLayers();
   L.geoJSON(geoData, {
@@ -226,7 +230,6 @@ function render1PartGeoJson(geoData) {
   }).addTo(pointsPartLayer);
 }
 
-// Автоматическая загрузка 1_part.geojson из корня сайта
 fetch('1_part.geojson')
   .then(res => {
     if(!res.ok) throw new Error('Файл 1_part.geojson не найден в корне');
@@ -237,6 +240,42 @@ fetch('1_part.geojson')
   })
   .catch(err => {
     console.warn('Автозагрузка 1_part.geojson недоступна или файл отсутствует:', err);
+  });
+
+// ===== РЕНДЕР И АВТОЗАГРУЗКА 2_part.geojson (ОРАНЖЕВЫЕ КРУЖОЧКИ, ВЫКЛ ПО УМОЛЧАНИЮ) =====
+function render2PartGeoJson(geoData) {
+  pointsPart2Layer.clearLayers();
+  L.geoJSON(geoData, {
+    pointToLayer: function (feature, latlng) {
+      return L.circleMarker(latlng, {
+        radius: 5,
+        color: '#c7511f',
+        fillColor: '#fd7e14', // Оранжевый цвет
+        fillOpacity: 0.85,
+        weight: 1.5
+      });
+    },
+    onEachFeature: function(feature, layer) {
+      if (feature.properties) {
+        let props = feature.properties;
+        let popupText = `<b>from_address:</b> ${props.from_address || '—'}<br>`;
+        popupText += `<b>cnt:</b> ${props.cnt || 0}`;
+        layer.bindPopup(popupText);
+      }
+    }
+  }).addTo(pointsPart2Layer);
+}
+
+fetch('2_part.geojson')
+  .then(res => {
+    if(!res.ok) throw new Error('Файл 2_part.geojson не найден в корне');
+    return res.json();
+  })
+  .then(data => {
+    render2PartGeoJson(data);
+  })
+  .catch(err => {
+    console.warn('Автозагрузка 2_part.geojson недоступна или файл отсутствует:', err);
   });
 
 let userMarker = null;
@@ -512,6 +551,7 @@ document.getElementById('clearBtn').addEventListener('click',()=>{
   routeLayer.clearLayers(); 
   polygonLayer.clearLayers();
   pointsPartLayer.clearLayers();
+  pointsPart2Layer.clearLayers();
   if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); }
   document.getElementById('csvFile').value=''; 
   csvData=[]; activeRouteCoords=[]; osrmCoords=[]; navRouteCoords=[]; 
