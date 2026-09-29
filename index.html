@@ -8,49 +8,118 @@
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <style>
-html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;}
+html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;-webkit-tap-highlight-color:transparent;}
 #map{height:100vh;width:100vw;}
-#file-input{position:absolute;z-index:1200;left:50%;transform:translateX(-50%);top:10px;background:#fff;padding:6px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.15);display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:95%;}
-#file-input input[type=file]{font-size:13px;}
-#file-input button{font-size:14px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer;}
-#info-box{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);z-index:1000;background:rgba(255,255,255,0.95);padding:6px 10px;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,0.3);min-width:150px;text-align:center;font-size:14px;}
-.leaflet-bottom .leaflet-control-zoom{top:50%;bottom:auto;transform:translateY(-50%);}
 
-/* Позиционирование элементов в правом нижнем углу */
-.leaflet-bottom.leaflet-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  bottom: 20px !important;
-  right: 10px !important;
-  gap: 10px;
+/* Компактная верхняя панель управления */
+#file-input{
+  position:absolute;
+  z-index:1200;
+  left:50%;
+  transform:translateX(-50%);
+  top:8px;
+  background:rgba(255,255,255,0.92);
+  backdrop-filter:blur(6px);
+  padding:4px 8px;
+  border-radius:12px;
+  box-shadow:0 2px 10px rgba(0,0,0,0.18);
+  display:flex;
+  gap:4px;
+  align-items:center;
+  justify-content:center;
+  flex-wrap:nowrap;
+  max-width:96%;
+  overflow-x:auto;
+}
+#file-input input[type=file]{display:none;}
+.file-upload-btn{
+  font-size:12px;
+  padding:6px 8px;
+  border-radius:6px;
+  border:1px solid #0077cc;
+  background:#e8f4ff;
+  color:#0077cc;
+  font-weight:600;
+  cursor:pointer;
+  white-space:nowrap;
+}
+#file-input button{
+  font-size:12px;
+  padding:6px 8px;
+  border-radius:6px;
+  border:1px solid #d0d0d0;
+  background:#fff;
+  cursor:pointer;
+  white-space:nowrap;
+  display:flex;
+  align-items:center;
+  gap:2px;
+}
+#file-input button:active{background:#ececec;}
+
+/* Нижняя инфо-плашка */
+#info-box{
+  position:absolute;
+  bottom:12px;
+  left:10px;
+  z-index:1000;
+  background:rgba(255,255,255,0.92);
+  backdrop-filter:blur(4px);
+  padding:6px 10px;
+  border-radius:10px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.2);
+  font-size:12px;
+  line-height:1.3;
+  pointer-events:none;
 }
 
+/* Оформление правого блока управления (Слои + Центроид) */
+.leaflet-bottom.leaflet-right {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-end !important;
+  bottom: 12px !important;
+  right: 10px !important;
+  gap: 8px !important;
+}
+
+/* Переключатель слоев Leaflet */
+.leaflet-control-layers {
+  border: none !important;
+  border-radius: 50% !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3) !important;
+  margin: 0 !important;
+}
+.leaflet-control-layers-expanded {
+  border-radius: 10px !important;
+  padding: 6px 10px !important;
+  font-size: 13px !important;
+}
+
+/* Кнопка центрирования */
 #centerUserBtn {
-  position: relative; /* Изменено с absolute для flex-контейнера Leaflet */
   z-index: 1200;
   background: #fff;
   border: none;
   border-radius: 50%;
-  width: 45px;
-  height: 45px;
+  width: 44px;
+  height: 44px;
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   display: flex;
   justify-content: center;
   align-items: center;
-  transition: transform 0.15s ease;
   margin: 0 !important;
+  padding: 0;
 }
-#centerUserBtn:hover{transform:scale(1.1);}
-#centerUserBtn svg{width:24px;height:24px;stroke:#0077cc;stroke-width:2;fill:none;}
+#centerUserBtn:active{transform:scale(0.95);}
+#centerUserBtn svg{width:22px;height:22px;stroke:#0077cc;stroke-width:2;fill:none;}
 
-#version-label{position:absolute;bottom:10px;left:10px;color:#000;font-size:12px;z-index:1200;text-shadow:0 0 3px rgba(0,0,0,0.7);}
+#version-label{position:absolute;bottom:2px;left:10px;color:#666;font-size:10px;z-index:1200;}
 textarea{resize:none;font-size:13px;}
-button{font-size:14px;padding:4px 6px;}
 
 .marker-label{
-  font-size:12px;
+  font-size:11px;
   font-weight:bold;
   color:#000;
   text-align:center;
@@ -62,47 +131,45 @@ button{font-size:14px;padding:4px 6px;}
 <body>
 
 <div id="file-input">
+  <label for="csvFile" class="file-upload-btn">📁 CSV</label>
   <input type="file" id="csvFile" accept=".csv" />
-  <button id="locBtn">GPS</button>
-  <button id="refreshBtn">Обновить</button>
-  <button id="clearBtn">Очистить</button>
-  <button id="downloadBtn">Сохранить</button>
-  <button id="navStartBtn">Старт</button>
-  <button id="navStopBtn">Стоп</button>
+  <button id="locBtn">📍 GPS</button>
+  <button id="refreshBtn">🔄</button>
+  <button id="clearBtn">❌</button>
+  <button id="downloadBtn">💾</button>
+  <button id="navStartBtn" style="color:green;font-weight:bold;">▶ Старт</button>
+  <button id="navStopBtn" style="color:red;font-weight:bold;">⏹ Стоп</button>
 </div>
 
 <div id="info-box">
-  <b>Маршрут</b><br>
-  <span id="info-distance">Длина: —</span><br>
-  <span id="info-duration">Время: —</span>
+  <b>Маршрут:</b> <span id="info-distance">—</span> | <span id="info-duration">—</span>
 </div>
 
 <div id="map"></div>
 
-<div id="version-label">версия 3.0</div>
+<div id="version-label">v3.1</div>
 
 <script>
 const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-L.control.zoom({position:'bottomleft'}).addTo(map);
 
 // Группы слоев
 let csvMarkersLayer = L.layerGroup().addTo(map);
 let routeLayer = L.layerGroup().addTo(map);
 let remainingRouteLayer = L.layerGroup().addTo(map);
 
-// Контроллер переключения слоев (расположен справа внизу над кнопкой центроида)
+// Контроллер переключения слоев (сворачиваемый, справа внизу)
 const overlays = {
   "Точки CSV": csvMarkersLayer,
-  "Основной маршрут": routeLayer,
-  "Линия навигации": remainingRouteLayer
+  "Маршрут": routeLayer,
+  "Навигация": remainingRouteLayer
 };
-L.control.layers(null, overlays, {position: 'bottomright'}).addTo(map);
+L.control.layers(null, overlays, {position: 'bottomright', collapsed: true}).addTo(map);
 
-// Добавляем кнопку центроида прямо в блок элементов bottomright, чтобы она располагалась ниже слоев
+// Вставляем кнопку центроида прямо под свернутую кнопку слоев
 const rightControlBlock = map._controlCorners['bottomright'];
 const centerBtnHtml = `
-<button id="centerUserBtn" title="Центрировать на пользователе">
+<button id="centerUserBtn" title="Мое местоположение">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
     <circle cx="12" cy="12" r="10"/>
     <line x1="12" y1="2" x2="12" y2="6"/>
@@ -180,8 +247,8 @@ function buildOptimizedRoute(){
   osrmCoords = [...activeRouteCoords];
 
   if(osrmCoords.length === 0){
-    infoDistanceEl.textContent='Длина: —';
-    infoDurationEl.textContent='Время: —';
+    infoDistanceEl.textContent='—';
+    infoDurationEl.textContent='—';
     navRouteCoords = [];
     remainingRouteLayer.clearLayers();
     return;
@@ -199,9 +266,9 @@ function buildOptimizedRoute(){
       L.geoJSON(trip.geometry,{style:{color:'#0077cc',weight:3,opacity:0.9}}).addTo(routeLayer);
       navRouteCoords = trip.geometry.coordinates.map(c => [c[1],c[0]]);
       const distanceKm = (trip.distance/1000).toFixed(2);
-      infoDistanceEl.textContent = `Длина: ${distanceKm} км`;
+      infoDistanceEl.textContent = `${distanceKm} км`;
       const totalMinutes = Math.round(trip.duration/60);
-      infoDurationEl.textContent = totalMinutes<60?`${totalMinutes} мин`:`${Math.floor(totalMinutes/60)} ч ${totalMinutes%60} мин`;
+      infoDurationEl.textContent = totalMinutes<60?`${totalMinutes} мин`:`${Math.floor(totalMinutes/60)}ч ${totalMinutes%60}м`;
       if(userCoords) centerOnUser(15);
     })
     .catch(err=>{ alert('Ошибка OSRM'); console.error(err); });
@@ -211,7 +278,7 @@ function buildOptimizedRoute(){
 function createPopup(point, marker, index){
   const container=document.createElement('div');
   container.style.display='flex'; container.style.flexDirection='column'; container.style.gap='4px';
-  container.style.fontSize='14px';
+  container.style.fontSize='13px';
 
   // LAT/LON
   const latDiv=document.createElement('div');
@@ -223,11 +290,11 @@ function createPopup(point, marker, index){
   latInput.style.border='none';
   latInput.style.background='transparent';
   latInput.style.flexGrow='1';
-  latInput.style.fontSize='13px';
+  latInput.style.fontSize='12px';
   const copyBtn=document.createElement('button');
   copyBtn.textContent='📋';
   copyBtn.title='Скопировать';
-  copyBtn.style.fontSize='14px';
+  copyBtn.style.fontSize='12px';
   copyBtn.addEventListener('click',()=>{ navigator.clipboard.writeText(latInput.value); copyBtn.textContent='✔'; setTimeout(()=>copyBtn.textContent='📋',1000); });
   latDiv.appendChild(latInput); latDiv.appendChild(copyBtn); container.appendChild(latDiv);
 
@@ -236,19 +303,19 @@ function createPopup(point, marker, index){
   statusDiv.style.display = 'flex';
   statusDiv.style.flexDirection = 'column';
   statusDiv.style.gap = '4px';
-  const statusLabel = document.createElement('span'); statusLabel.textContent = 'status:';
+  const statusLabel = document.createElement('span'); statusLabel.textContent = 'Статус:'; statusLabel.style.fontWeight='bold';
   const btnContainer = document.createElement('div'); btnContainer.style.display='flex'; btnContainer.style.gap='4px';
   const btn0 = document.createElement('button'); btn0.textContent='В процессе';
   const btn1 = document.createElement('button'); btn1.textContent='Выполнено';
-  [btn0, btn1].forEach(b => { b.style.fontSize='14px'; b.style.flex='1'; });
+  [btn0, btn1].forEach(b => { b.style.fontSize='12px'; b.style.flex='1'; b.style.padding='4px'; });
   let originalValue = String(point.status);
   function updateButtons() { 
     if(originalValue==='0'){ btn0.style.background='#0077cc'; btn0.style.color='#fff'; btn1.style.background=''; btn1.style.color=''; }
     else { btn1.style.background='#0077cc'; btn1.style.color='#fff'; btn0.style.background=''; btn0.style.color=''; }
   }
   updateButtons();
-  const saveBtn = document.createElement('button'); saveBtn.textContent='💾'; saveBtn.style.display='none'; saveBtn.style.fontSize='14px';
-  const cancelBtn = document.createElement('button'); cancelBtn.textContent='❌'; cancelBtn.style.display='none'; cancelBtn.style.fontSize='14px';
+  const saveBtn = document.createElement('button'); saveBtn.textContent='💾 Сохранить'; saveBtn.style.display='none'; saveBtn.style.fontSize='12px';
+  const cancelBtn = document.createElement('button'); cancelBtn.textContent='❌'; cancelBtn.style.display='none'; cancelBtn.style.fontSize='12px';
   btn0.addEventListener('click',()=>{ originalValue='0'; updateButtons(); saveBtn.style.display='inline-block'; cancelBtn.style.display='inline-block'; });
   btn1.addEventListener('click',()=>{ originalValue='1'; updateButtons(); saveBtn.style.display='inline-block'; cancelBtn.style.display='inline-block'; });
   saveBtn.addEventListener('click',()=>{
@@ -266,10 +333,10 @@ function createPopup(point, marker, index){
   // COMMENT
   const commentDiv=document.createElement('div');
   commentDiv.style.display='flex'; commentDiv.style.flexDirection='column'; commentDiv.style.gap='4px';
-  const commentLabel=document.createElement('span'); commentLabel.textContent='comment:';
-  const commentInput=document.createElement('textarea'); commentInput.value=point.comment||""; commentInput.rows=2; commentInput.style.width='100%'; commentInput.style.fontSize='13px';
-  const commentSave=document.createElement('button'); commentSave.textContent='💾'; commentSave.style.display='none'; commentSave.style.fontSize='14px';
-  const commentCancel=document.createElement('button'); commentCancel.textContent='❌'; commentCancel.style.display='none'; commentCancel.style.fontSize='14px';
+  const commentLabel=document.createElement('span'); commentLabel.textContent='Комментарий:'; commentLabel.style.fontWeight='bold';
+  const commentInput=document.createElement('textarea'); commentInput.value=point.comment||""; commentInput.rows=2; commentInput.style.width='100%'; commentInput.style.fontSize='12px';
+  const commentSave=document.createElement('button'); commentSave.textContent='💾'; commentSave.style.display='none'; commentSave.style.fontSize='12px';
+  const commentCancel=document.createElement('button'); commentCancel.textContent='❌'; commentCancel.style.display='none'; commentCancel.style.fontSize='12px';
   let originalComment = point.comment || "";
   commentInput.addEventListener('input',()=>{
     if(commentInput.value !== originalComment){ commentSave.style.display='inline-block'; commentCancel.style.display='inline-block'; } 
@@ -284,26 +351,14 @@ function createPopup(point, marker, index){
   container.appendChild(commentDiv);
 
   // GT_NAME (read-only)
-  const gtDiv = document.createElement('div');
-  gtDiv.style.display='flex';
-  gtDiv.style.flexDirection='column';
-  gtDiv.style.gap='4px';
-
-  const gtLabel = document.createElement('span');
-  gtLabel.textContent='gt_name:';
-
-  const gtInput = document.createElement('input');
-  gtInput.type='text';
-  gtInput.value = point.gt_name || "";
-  gtInput.readOnly = true;
-  gtInput.style.border='none';
-  gtInput.style.background='transparent';
-  gtInput.style.fontSize='13px';
-
-  gtDiv.appendChild(gtLabel);
-  gtDiv.appendChild(gtInput);
-
-  container.appendChild(gtDiv);
+  if(point.gt_name){
+    const gtDiv = document.createElement('div');
+    gtDiv.style.display='flex'; gtDiv.style.gap='4px'; gtDiv.style.fontSize='12px';
+    const gtLabel = document.createElement('span'); gtLabel.textContent='GT:'; gtLabel.style.fontWeight='bold';
+    const gtInput = document.createElement('span'); gtInput.textContent = point.gt_name;
+    gtDiv.appendChild(gtLabel); gtDiv.appendChild(gtInput);
+    container.appendChild(gtDiv);
+  }
 
   return container;
 }
@@ -330,7 +385,6 @@ document.getElementById('csvFile').addEventListener('change', function(ev){
       const marker=L.circleMarker([lat,lon],{radius:6,color:color,fillColor:color,fillOpacity:0.8}).addTo(csvMarkersLayer);
       csvData[i].marker = marker;
       
-      // подпись count над точкой
       if(count !== ""){
         L.marker([lat,lon],{
           icon: L.divIcon({
@@ -342,7 +396,7 @@ document.getElementById('csvFile').addEventListener('change', function(ev){
           interactive:false
         }).addTo(csvMarkersLayer);
       }
-      marker.bindPopup(createPopup(csvData[i],marker,i),{minWidth:160});
+      marker.bindPopup(createPopup(csvData[i],marker,i),{minWidth:150});
     });
     buildOptimizedRoute();
   }});
@@ -367,8 +421,8 @@ document.getElementById('clearBtn').addEventListener('click',()=>{
   remainingRouteLayer.clearLayers();
   document.getElementById('csvFile').value=''; 
   csvData=[]; activeRouteCoords=[]; osrmCoords=[]; navRouteCoords=[]; 
-  infoDistanceEl.textContent='Длина: —'; 
-  infoDurationEl.textContent='Время: —'; 
+  infoDistanceEl.textContent='—'; 
+  infoDurationEl.textContent='—'; 
 });
 document.getElementById('centerUserBtn').addEventListener('click',()=>{ if(userCoords){ autoFollow=true; centerOnUser(17); } });
 
@@ -386,7 +440,6 @@ function startRealNavigation(){
     checkPointsInUserRadius();
     if(autoFollow) centerOnUser();
 
-    // Остаток маршрута красной линией
     if(navRouteCoords.length>0){
       let nearestIndex=0, minDist=Infinity;
       for(let i=0;i<navRouteCoords.length;i++){
@@ -400,7 +453,6 @@ function startRealNavigation(){
       let remainingPoints=navRouteCoords.slice(nearestIndex);
       L.polyline(remainingPoints,{color:'red',weight:3,opacity:0.9}).addTo(remainingRouteLayer);
     
-      // Жёлтая линия 200м
       let yellowLineCoords=[[userCoords[0],userCoords[1]]];
       let distAccum = 0;
       for(let i=nearestIndex; i<navRouteCoords.length-1; i++){
