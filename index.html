@@ -14,34 +14,9 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
 /* Скрываем атрибуцию Leaflet */
 .leaflet-control-attribution { display: none !important; }
 
-/* Верхний блок с 3 рядами кнопок */
-#file-input{
-  position:absolute;
-  z-index:1200;
-  left:50%;
-  transform:translateX(-50%);
-  top:10px;
-  background:#fff;
-  padding:6px;
-  border-radius:10px;
-  box-shadow:0 2px 8px rgba(0,0,0,0.15);
-  display:flex;
-  gap:6px;
-  align-items:center;
-  justify-content:center;
-  flex-wrap:wrap;
-  max-width:95%;
-}
-#file-input input[type=file]{display:none;}
-.btn-label{
-  font-size:13px;
-  padding:5px 7px;
-  border-radius:6px;
-  border:1px solid #ccc;
-  background:#f7f7f7;
-  cursor:pointer;
-  display:inline-block;
-}
+/* Исходный вид верхней панели */
+#file-input{position:absolute;z-index:1200;left:50%;transform:translateX(-50%);top:10px;background:#fff;padding:6px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.15);display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:95%;}
+#file-input input[type=file]{font-size:13px;}
 #file-input button{font-size:14px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer;}
 
 /* Инфо-бокс снизу по центру */
@@ -131,9 +106,7 @@ textarea{resize:none;font-size:13px;}
 <body>
 
 <div id="file-input">
-  <label for="csvFile" class="btn-label">Выберите CSV</label>
   <input type="file" id="csvFile" accept=".csv" />
-
   <button id="locBtn">GPS</button>
   <button id="refreshBtn">Обновить</button>
   <button id="clearBtn">Очистить</button>
