@@ -133,9 +133,6 @@ textarea{resize:none;font-size:13px;}
 <div id="file-input">
   <label for="csvFile" class="btn-label">Выберите CSV</label>
   <input type="file" id="csvFile" accept=".csv" />
-  
-  <label for="geoJsonFile" class="btn-label" style="background:#eef6ff;border-color:#0077cc;">Полигон</label>
-  <input type="file" id="geoJsonFile" accept=".geojson,.json" />
 
   <button id="locBtn">GPS</button>
   <button id="refreshBtn">Обновить</button>
@@ -197,11 +194,11 @@ function renderGeoJson(geoData) {
   polygonLayer.clearLayers();
   const poly = L.geoJSON(geoData, {
     style: {
-      color: '#ff7800',
-      weight: 2,
-      opacity: 0.85,
-      fillColor: '#ff7800',
-      fillOpacity: 0.15
+      color: '#000000',      // Черный контур
+      weight: 1.5,           // Толщина линии
+      opacity: 0.85,         // Прозрачность линий
+      fillColor: '#000000',  // Заливка
+      fillOpacity: 0.08     // Прозрачность заливки
     },
     onEachFeature: function(feature, layer) {
       if (feature.properties) {
@@ -229,22 +226,6 @@ fetch('hex.geojson')
   .catch(err => {
     console.warn('Автозагрузка hex.geojson недоступна или файл отсутствует:', err);
   });
-
-// Ручная загрузка альтернативного GeoJSON файла через кнопку
-document.getElementById('geoJsonFile').addEventListener('change', function(ev){
-  const file = ev.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = function(e){
-    try {
-      const geojson = JSON.parse(e.target.result);
-      renderGeoJson(geojson);
-    } catch(err) {
-      alert('Ошибка при чтении файла GeoJSON');
-    }
-  };
-  reader.readAsText(file);
-});
 
 let userMarker = null;
 let autoFollow = true;
@@ -520,7 +501,6 @@ document.getElementById('clearBtn').addEventListener('click',()=>{
   polygonLayer.clearLayers();
   if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); }
   document.getElementById('csvFile').value=''; 
-  document.getElementById('geoJsonFile').value='';
   csvData=[]; activeRouteCoords=[]; osrmCoords=[]; navRouteCoords=[]; 
   infoDistanceEl.textContent='Длина: —'; 
   infoDurationEl.textContent='Время: —'; 
