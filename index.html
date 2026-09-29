@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -17,9 +15,36 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
 #file-input button{font-size:14px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer;}
 #info-box{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);z-index:1000;background:rgba(255,255,255,0.95);padding:6px 10px;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,0.3);min-width:150px;text-align:center;font-size:14px;}
 .leaflet-bottom .leaflet-control-zoom{top:50%;bottom:auto;transform:translateY(-50%);}
-#centerUserBtn{position:absolute;bottom:80px;right:10px;z-index:1200;background:#fff;border:none;border-radius:50%;width:45px;height:45px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;justify-content:center;align-items:center;transition:transform 0.15s ease;}
+
+/* Позиционирование элементов в правом нижнем углу */
+.leaflet-bottom.leaflet-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  bottom: 20px !important;
+  right: 10px !important;
+  gap: 10px;
+}
+
+#centerUserBtn {
+  position: relative; /* Изменено с absolute для flex-контейнера Leaflet */
+  z-index: 1200;
+  background: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 45px;
+  height: 45px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: transform 0.15s ease;
+  margin: 0 !important;
+}
 #centerUserBtn:hover{transform:scale(1.1);}
 #centerUserBtn svg{width:24px;height:24px;stroke:#0077cc;stroke-width:2;fill:none;}
+
 #version-label{position:absolute;bottom:10px;left:10px;color:#000;font-size:12px;z-index:1200;text-shadow:0 0 3px rgba(0,0,0,0.7);}
 textarea{resize:none;font-size:13px;}
 button{font-size:14px;padding:4px 6px;}
@@ -32,7 +57,6 @@ button{font-size:14px;padding:4px 6px;}
   transform:translate(-50%,-22px);
   white-space:nowrap;
 }
-	
 </style>
 </head>
 <body>
@@ -55,16 +79,6 @@ button{font-size:14px;padding:4px 6px;}
 
 <div id="map"></div>
 
-<button id="centerUserBtn">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-<circle cx="12" cy="12" r="10"/>
-<line x1="12" y1="2" x2="12" y2="6"/>
-<line x1="12" y1="18" x2="12" y2="22"/>
-<line x1="2" y1="12" x2="6" y2="12"/>
-<line x1="18" y1="12" x2="22" y2="12"/>
-</svg>
-</button>
-
 <div id="version-label">версия 3.0</div>
 
 <script>
@@ -72,8 +86,33 @@ const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 L.control.zoom({position:'bottomleft'}).addTo(map);
 
+// Группы слоев
 let csvMarkersLayer = L.layerGroup().addTo(map);
 let routeLayer = L.layerGroup().addTo(map);
+let remainingRouteLayer = L.layerGroup().addTo(map);
+
+// Контроллер переключения слоев (расположен справа внизу над кнопкой центроида)
+const overlays = {
+  "Точки CSV": csvMarkersLayer,
+  "Основной маршрут": routeLayer,
+  "Линия навигации": remainingRouteLayer
+};
+L.control.layers(null, overlays, {position: 'bottomright'}).addTo(map);
+
+// Добавляем кнопку центроида прямо в блок элементов bottomright, чтобы она располагалась ниже слоев
+const rightControlBlock = map._controlCorners['bottomright'];
+const centerBtnHtml = `
+<button id="centerUserBtn" title="Центрировать на пользователе">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10"/>
+    <line x1="12" y1="2" x2="12" y2="6"/>
+    <line x1="12" y1="18" x2="12" y2="22"/>
+    <line x1="2" y1="12" x2="6" y2="12"/>
+    <line x1="18" y1="12" x2="22" y2="12"/>
+  </svg>
+</button>`;
+rightControlBlock.insertAdjacentHTML('beforeend', centerBtnHtml);
+
 let userMarker = null;
 let autoFollow = true;
 let csvData = [];
@@ -85,7 +124,6 @@ let userRadius = null;
 
 let navRouteCoords = [];
 let navWatchId = null;
-let remainingRouteLayer = null;
 
 const infoDistanceEl = document.getElementById('info-distance');
 const infoDurationEl = document.getElementById('info-duration');
@@ -96,42 +134,29 @@ function centerOnUser(zoom=15){ if(userCoords) map.flyTo(userCoords,zoom,{durati
 
 // ===== Автообновление статуса точек при попадании в радиус пользователя =====
 function checkPointsInUserRadius(){
-
   if(!userCoords) return;
-
   let changed = false;
 
   csvData.forEach((p)=>{
-
     if(p.status === "0"){
-
       const d = L.latLng(userCoords).distanceTo([p.lat,p.lon]);
-
       if(d <= 50){
-
         p.status = "1";
-
         if(p.marker){
           p.marker.setStyle({
             color:'green',
             fillColor:'green'
           });
         }
-
         changed = true;
-
       }
-
     }
-
   });
 
   if(changed){
     buildOptimizedRoute();
   }
-
 }
-
 
 function updateUserPosition(pos){ 
   userCoords=[pos.coords.latitude,pos.coords.longitude]; 
@@ -158,7 +183,7 @@ function buildOptimizedRoute(){
     infoDistanceEl.textContent='Длина: —';
     infoDurationEl.textContent='Время: —';
     navRouteCoords = [];
-    if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); remainingRouteLayer=null; }
+    remainingRouteLayer.clearLayers();
     return;
   }
 
@@ -257,27 +282,28 @@ function createPopup(point, marker, index){
   commentCancel.addEventListener('click',()=>{ commentInput.value = originalComment; commentSave.style.display='none'; commentCancel.style.display='none'; });
   commentDiv.appendChild(commentLabel); commentDiv.appendChild(commentInput); commentDiv.appendChild(commentSave); commentDiv.appendChild(commentCancel);
   container.appendChild(commentDiv);
-	// GT_NAME (read-only)
-const gtDiv = document.createElement('div');
-gtDiv.style.display='flex';
-gtDiv.style.flexDirection='column';
-gtDiv.style.gap='4px';
 
-const gtLabel = document.createElement('span');
-gtLabel.textContent='gt_name:';
+  // GT_NAME (read-only)
+  const gtDiv = document.createElement('div');
+  gtDiv.style.display='flex';
+  gtDiv.style.flexDirection='column';
+  gtDiv.style.gap='4px';
 
-const gtInput = document.createElement('input');
-gtInput.type='text';
-gtInput.value = point.gt_name || "";
-gtInput.readOnly = true;
-gtInput.style.border='none';
-gtInput.style.background='transparent';
-gtInput.style.fontSize='13px';
+  const gtLabel = document.createElement('span');
+  gtLabel.textContent='gt_name:';
 
-gtDiv.appendChild(gtLabel);
-gtDiv.appendChild(gtInput);
+  const gtInput = document.createElement('input');
+  gtInput.type='text';
+  gtInput.value = point.gt_name || "";
+  gtInput.readOnly = true;
+  gtInput.style.border='none';
+  gtInput.style.background='transparent';
+  gtInput.style.fontSize='13px';
 
-container.appendChild(gtDiv);
+  gtDiv.appendChild(gtLabel);
+  gtDiv.appendChild(gtInput);
+
+  container.appendChild(gtDiv);
 
   return container;
 }
@@ -294,28 +320,28 @@ document.getElementById('csvFile').addEventListener('change', function(ev){
     osrmCoords=[];
     data.forEach((r,i)=>{
       const lat = Number(r.lat!==undefined ? r.lat : r.latitude);
-	  const lon = Number(r.lon!==undefined ? r.lon : r.longitude);
+      const lon = Number(r.lon!==undefined ? r.lon : r.longitude);
       const status = (String(r.status) === "1") ? "1" : "0";
       const comment=r.comment||"";
-	  const count=r.count||"";
-	  const gt_name=r.gt_name||"";
+      const count=r.count||"";
+      const gt_name=r.gt_name||"";
       csvData.push({lat,lon,status,comment,count,gt_name});
       const color=status==="0"?'red':'green';
       const marker=L.circleMarker([lat,lon],{radius:6,color:color,fillColor:color,fillOpacity:0.8}).addTo(csvMarkersLayer);
-		csvData[i].marker = marker;
-		
-		// подпись count над точкой
-if(count !== ""){
-  const label = L.marker([lat,lon],{
-    icon: L.divIcon({
-      className:'marker-label',
-      html: count,
-      iconSize:[30,12],
-      iconAnchor:[15,30] // смещение подписи
-    }),
-    interactive:false
-  }).addTo(csvMarkersLayer);
-}
+      csvData[i].marker = marker;
+      
+      // подпись count над точкой
+      if(count !== ""){
+        L.marker([lat,lon],{
+          icon: L.divIcon({
+            className:'marker-label',
+            html: count,
+            iconSize:[30,12],
+            iconAnchor:[15,30]
+          }),
+          interactive:false
+        }).addTo(csvMarkersLayer);
+      }
       marker.bindPopup(createPopup(csvData[i],marker,i),{minWidth:160});
     });
     buildOptimizedRoute();
@@ -338,7 +364,7 @@ document.getElementById('refreshBtn').addEventListener('click',()=>{ buildOptimi
 document.getElementById('clearBtn').addEventListener('click',()=>{ 
   csvMarkersLayer.clearLayers(); 
   routeLayer.clearLayers(); 
-  if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); remainingRouteLayer=null; }
+  remainingRouteLayer.clearLayers();
   document.getElementById('csvFile').value=''; 
   csvData=[]; activeRouteCoords=[]; osrmCoords=[]; navRouteCoords=[]; 
   infoDistanceEl.textContent='Длина: —'; 
@@ -351,7 +377,6 @@ function startRealNavigation(){
   if(!navRouteCoords.length){ alert('Нет маршрута для навигации'); return; }
   if(!navigator.geolocation){ alert('Геолокация не поддерживается'); return; }
   if(navWatchId) navigator.geolocation.clearWatch(navWatchId);
-  if(!remainingRouteLayer) remainingRouteLayer = L.layerGroup().addTo(map);
   navWatchId = navigator.geolocation.watchPosition(pos=>{
     userCoords=[pos.coords.latitude,pos.coords.longitude];
     if(!userMarker){ userMarker = L.circleMarker(userCoords,{radius:6,color:'#0077cc',fillColor:'#0077cc',fillOpacity:0.8}).addTo(map).bindPopup('Вы здесь'); }
@@ -375,7 +400,7 @@ function startRealNavigation(){
       let remainingPoints=navRouteCoords.slice(nearestIndex);
       L.polyline(remainingPoints,{color:'red',weight:3,opacity:0.9}).addTo(remainingRouteLayer);
     
-	// Жёлтая линия 200м
+      // Жёлтая линия 200м
       let yellowLineCoords=[[userCoords[0],userCoords[1]]];
       let distAccum = 0;
       for(let i=nearestIndex; i<navRouteCoords.length-1; i++){
@@ -395,7 +420,7 @@ function startRealNavigation(){
         }
       }
       L.polyline(yellowLineCoords,{color:'yellow',weight:4,opacity:0.9}).addTo(remainingRouteLayer);
-}
+    }
 
   }, err=>alert('Ошибка GPS'), {enableHighAccuracy:true, maximumAge:0, timeout:5000});
 }
