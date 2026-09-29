@@ -1,0 +1,413 @@
+
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Мобильный навигатор с OSRM Trip</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;}
+#map{height:100vh;width:100vw;}
+#file-input{position:absolute;z-index:1200;left:50%;transform:translateX(-50%);top:10px;background:#fff;padding:6px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.15);display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:95%;}
+#file-input input[type=file]{font-size:13px;}
+#file-input button{font-size:14px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer;}
+#info-box{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);z-index:1000;background:rgba(255,255,255,0.95);padding:6px 10px;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,0.3);min-width:150px;text-align:center;font-size:14px;}
+.leaflet-bottom .leaflet-control-zoom{top:50%;bottom:auto;transform:translateY(-50%);}
+#centerUserBtn{position:absolute;bottom:80px;right:10px;z-index:1200;background:#fff;border:none;border-radius:50%;width:45px;height:45px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;justify-content:center;align-items:center;transition:transform 0.15s ease;}
+#centerUserBtn:hover{transform:scale(1.1);}
+#centerUserBtn svg{width:24px;height:24px;stroke:#0077cc;stroke-width:2;fill:none;}
+#version-label{position:absolute;bottom:10px;left:10px;color:#000;font-size:12px;z-index:1200;text-shadow:0 0 3px rgba(0,0,0,0.7);}
+textarea{resize:none;font-size:13px;}
+button{font-size:14px;padding:4px 6px;}
+
+.marker-label{
+  font-size:12px;
+  font-weight:bold;
+  color:#000;
+  text-align:center;
+  transform:translate(-50%,-22px);
+  white-space:nowrap;
+}
+	
+</style>
+</head>
+<body>
+
+<div id="file-input">
+  <input type="file" id="csvFile" accept=".csv" />
+  <button id="locBtn">GPS</button>
+  <button id="refreshBtn">Обновить</button>
+  <button id="clearBtn">Очистить</button>
+  <button id="downloadBtn">Сохранить</button>
+  <button id="navStartBtn">Старт</button>
+  <button id="navStopBtn">Стоп</button>
+</div>
+
+<div id="info-box">
+  <b>Маршрут</b><br>
+  <span id="info-distance">Длина: —</span><br>
+  <span id="info-duration">Время: —</span>
+</div>
+
+<div id="map"></div>
+
+<button id="centerUserBtn">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+<circle cx="12" cy="12" r="10"/>
+<line x1="12" y1="2" x2="12" y2="6"/>
+<line x1="12" y1="18" x2="12" y2="22"/>
+<line x1="2" y1="12" x2="6" y2="12"/>
+<line x1="18" y1="12" x2="22" y2="12"/>
+</svg>
+</button>
+
+<div id="version-label">версия 3.0</div>
+
+<script>
+const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+L.control.zoom({position:'bottomleft'}).addTo(map);
+
+let csvMarkersLayer = L.layerGroup().addTo(map);
+let routeLayer = L.layerGroup().addTo(map);
+let userMarker = null;
+let autoFollow = true;
+let csvData = [];
+let csvFileName = '';
+let userCoords = null;
+let activeRouteCoords = [];
+let osrmCoords = [];
+let userRadius = null;
+
+let navRouteCoords = [];
+let navWatchId = null;
+let remainingRouteLayer = null;
+
+const infoDistanceEl = document.getElementById('info-distance');
+const infoDurationEl = document.getElementById('info-duration');
+
+map.on('movestart zoomstart',()=>{autoFollow=false;});
+
+function centerOnUser(zoom=15){ if(userCoords) map.flyTo(userCoords,zoom,{duration:1.0}); }
+
+// ===== Автообновление статуса точек при попадании в радиус пользователя =====
+function checkPointsInUserRadius(){
+
+  if(!userCoords) return;
+
+  let changed = false;
+
+  csvData.forEach((p)=>{
+
+    if(p.status === "0"){
+
+      const d = L.latLng(userCoords).distanceTo([p.lat,p.lon]);
+
+      if(d <= 50){
+
+        p.status = "1";
+
+        if(p.marker){
+          p.marker.setStyle({
+            color:'green',
+            fillColor:'green'
+          });
+        }
+
+        changed = true;
+
+      }
+
+    }
+
+  });
+
+  if(changed){
+    buildOptimizedRoute();
+  }
+
+}
+
+
+function updateUserPosition(pos){ 
+  userCoords=[pos.coords.latitude,pos.coords.longitude]; 
+  if(!userMarker){ userMarker = L.circleMarker(userCoords,{radius:6,color:'#0077cc',fillColor:'#0077cc',fillOpacity:0.8}).addTo(map).bindPopup('Вы здесь'); }
+  else userMarker.setLatLng(userCoords);
+  if(!userRadius) userRadius = L.circle(userCoords,{radius:50,color:'black',weight:1,fillOpacity:0}).addTo(map);
+  else userRadius.setLatLng(userCoords);
+  checkPointsInUserRadius();
+  if(autoFollow) centerOnUser(); 
+}
+
+function requestUserLocation(){ 
+  if(!navigator.geolocation){alert('Геолокация не поддерживается');return;} 
+  navigator.geolocation.getCurrentPosition(updateUserPosition,err=>alert('GPS недоступен'),{enableHighAccuracy:true}); 
+}
+
+// ================= Build OSRM Route =================
+function buildOptimizedRoute(){
+  routeLayer.clearLayers();
+  activeRouteCoords = csvData.filter(p => String(p.status) === "0").map(p => [Number(p.lat), Number(p.lon)]);
+  osrmCoords = [...activeRouteCoords];
+
+  if(osrmCoords.length === 0){
+    infoDistanceEl.textContent='Длина: —';
+    infoDurationEl.textContent='Время: —';
+    navRouteCoords = [];
+    if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); remainingRouteLayer=null; }
+    return;
+  }
+
+  const tripCoords = userCoords ? [userCoords, ...osrmCoords] : osrmCoords;
+  const coordStr = tripCoords.map(c => `${c[1]},${c[0]}`).join(';');
+
+  fetch(`https://router.project-osrm.org/trip/v1/driving/${coordStr}?source=first&roundtrip=false&overview=full&geometries=geojson`)
+    .then(r=>r.json())
+    .then(json=>{
+      if(!json.trips || !json.trips.length){ alert('OSRM не смог построить маршрут'); return; }
+      const trip = json.trips[0];
+      routeLayer.clearLayers();
+      L.geoJSON(trip.geometry,{style:{color:'#0077cc',weight:3,opacity:0.9}}).addTo(routeLayer);
+      navRouteCoords = trip.geometry.coordinates.map(c => [c[1],c[0]]);
+      const distanceKm = (trip.distance/1000).toFixed(2);
+      infoDistanceEl.textContent = `Длина: ${distanceKm} км`;
+      const totalMinutes = Math.round(trip.duration/60);
+      infoDurationEl.textContent = totalMinutes<60?`${totalMinutes} мин`:`${Math.floor(totalMinutes/60)} ч ${totalMinutes%60} мин`;
+      if(userCoords) centerOnUser(15);
+    })
+    .catch(err=>{ alert('Ошибка OSRM'); console.error(err); });
+}
+
+// ================= CREATE POPUP =================
+function createPopup(point, marker, index){
+  const container=document.createElement('div');
+  container.style.display='flex'; container.style.flexDirection='column'; container.style.gap='4px';
+  container.style.fontSize='14px';
+
+  // LAT/LON
+  const latDiv=document.createElement('div');
+  latDiv.style.display='flex'; latDiv.style.gap='4px';
+  const latInput=document.createElement('input');
+  latInput.type='text';
+  latInput.value=`${point.lat}, ${point.lon}`;
+  latInput.readOnly=true;
+  latInput.style.border='none';
+  latInput.style.background='transparent';
+  latInput.style.flexGrow='1';
+  latInput.style.fontSize='13px';
+  const copyBtn=document.createElement('button');
+  copyBtn.textContent='📋';
+  copyBtn.title='Скопировать';
+  copyBtn.style.fontSize='14px';
+  copyBtn.addEventListener('click',()=>{ navigator.clipboard.writeText(latInput.value); copyBtn.textContent='✔'; setTimeout(()=>copyBtn.textContent='📋',1000); });
+  latDiv.appendChild(latInput); latDiv.appendChild(copyBtn); container.appendChild(latDiv);
+
+  // STATUS
+  const statusDiv = document.createElement('div');
+  statusDiv.style.display = 'flex';
+  statusDiv.style.flexDirection = 'column';
+  statusDiv.style.gap = '4px';
+  const statusLabel = document.createElement('span'); statusLabel.textContent = 'status:';
+  const btnContainer = document.createElement('div'); btnContainer.style.display='flex'; btnContainer.style.gap='4px';
+  const btn0 = document.createElement('button'); btn0.textContent='В процессе';
+  const btn1 = document.createElement('button'); btn1.textContent='Выполнено';
+  [btn0, btn1].forEach(b => { b.style.fontSize='14px'; b.style.flex='1'; });
+  let originalValue = String(point.status);
+  function updateButtons() { 
+    if(originalValue==='0'){ btn0.style.background='#0077cc'; btn0.style.color='#fff'; btn1.style.background=''; btn1.style.color=''; }
+    else { btn1.style.background='#0077cc'; btn1.style.color='#fff'; btn0.style.background=''; btn0.style.color=''; }
+  }
+  updateButtons();
+  const saveBtn = document.createElement('button'); saveBtn.textContent='💾'; saveBtn.style.display='none'; saveBtn.style.fontSize='14px';
+  const cancelBtn = document.createElement('button'); cancelBtn.textContent='❌'; cancelBtn.style.display='none'; cancelBtn.style.fontSize='14px';
+  btn0.addEventListener('click',()=>{ originalValue='0'; updateButtons(); saveBtn.style.display='inline-block'; cancelBtn.style.display='inline-block'; });
+  btn1.addEventListener('click',()=>{ originalValue='1'; updateButtons(); saveBtn.style.display='inline-block'; cancelBtn.style.display='inline-block'; });
+  saveBtn.addEventListener('click',()=>{
+    point.status = originalValue;
+    csvData[index].status = originalValue;
+    marker.setStyle({color: originalValue==='0'?'red':'green', fillColor: originalValue==='0'?'red':'green'});
+    saveBtn.style.display='none'; cancelBtn.style.display='none';
+    buildOptimizedRoute();
+  });
+  cancelBtn.addEventListener('click',()=>{ originalValue = point.status; updateButtons(); saveBtn.style.display='none'; cancelBtn.style.display='none'; });
+  btnContainer.appendChild(btn0); btnContainer.appendChild(btn1);
+  statusDiv.appendChild(statusLabel); statusDiv.appendChild(btnContainer); statusDiv.appendChild(saveBtn); statusDiv.appendChild(cancelBtn);
+  container.appendChild(statusDiv);
+
+  // COMMENT
+  const commentDiv=document.createElement('div');
+  commentDiv.style.display='flex'; commentDiv.style.flexDirection='column'; commentDiv.style.gap='4px';
+  const commentLabel=document.createElement('span'); commentLabel.textContent='comment:';
+  const commentInput=document.createElement('textarea'); commentInput.value=point.comment||""; commentInput.rows=2; commentInput.style.width='100%'; commentInput.style.fontSize='13px';
+  const commentSave=document.createElement('button'); commentSave.textContent='💾'; commentSave.style.display='none'; commentSave.style.fontSize='14px';
+  const commentCancel=document.createElement('button'); commentCancel.textContent='❌'; commentCancel.style.display='none'; commentCancel.style.fontSize='14px';
+  let originalComment = point.comment || "";
+  commentInput.addEventListener('input',()=>{
+    if(commentInput.value !== originalComment){ commentSave.style.display='inline-block'; commentCancel.style.display='inline-block'; } 
+    else{ commentSave.style.display='none'; commentCancel.style.display='none'; }
+  });
+  commentSave.addEventListener('click',()=>{
+    point.comment = commentInput.value; csvData[index].comment = commentInput.value; originalComment = commentInput.value;
+    commentSave.style.display='none'; commentCancel.style.display='none';
+  });
+  commentCancel.addEventListener('click',()=>{ commentInput.value = originalComment; commentSave.style.display='none'; commentCancel.style.display='none'; });
+  commentDiv.appendChild(commentLabel); commentDiv.appendChild(commentInput); commentDiv.appendChild(commentSave); commentDiv.appendChild(commentCancel);
+  container.appendChild(commentDiv);
+	// GT_NAME (read-only)
+const gtDiv = document.createElement('div');
+gtDiv.style.display='flex';
+gtDiv.style.flexDirection='column';
+gtDiv.style.gap='4px';
+
+const gtLabel = document.createElement('span');
+gtLabel.textContent='gt_name:';
+
+const gtInput = document.createElement('input');
+gtInput.type='text';
+gtInput.value = point.gt_name || "";
+gtInput.readOnly = true;
+gtInput.style.border='none';
+gtInput.style.background='transparent';
+gtInput.style.fontSize='13px';
+
+gtDiv.appendChild(gtLabel);
+gtDiv.appendChild(gtInput);
+
+container.appendChild(gtDiv);
+
+  return container;
+}
+
+// ================= EVENTS =================
+document.getElementById('csvFile').addEventListener('change', function(ev){
+  const file=ev.target.files[0]; if(!file) return; csvFileName=file.name;
+  Papa.parse(file,{header:true,dynamicTyping:false,skipEmptyLines:true,complete:function(results){
+    const data=results.data||[]; 
+    csvData=[]; 
+    csvMarkersLayer.clearLayers(); 
+    routeLayer.clearLayers();
+    activeRouteCoords=[]; 
+    osrmCoords=[];
+    data.forEach((r,i)=>{
+      const lat = Number(r.lat!==undefined ? r.lat : r.latitude);
+	  const lon = Number(r.lon!==undefined ? r.lon : r.longitude);
+      const status = (String(r.status) === "1") ? "1" : "0";
+      const comment=r.comment||"";
+	  const count=r.count||"";
+	  const gt_name=r.gt_name||"";
+      csvData.push({lat,lon,status,comment,count,gt_name});
+      const color=status==="0"?'red':'green';
+      const marker=L.circleMarker([lat,lon],{radius:6,color:color,fillColor:color,fillOpacity:0.8}).addTo(csvMarkersLayer);
+		csvData[i].marker = marker;
+		
+		// подпись count над точкой
+if(count !== ""){
+  const label = L.marker([lat,lon],{
+    icon: L.divIcon({
+      className:'marker-label',
+      html: count,
+      iconSize:[30,12],
+      iconAnchor:[15,30] // смещение подписи
+    }),
+    interactive:false
+  }).addTo(csvMarkersLayer);
+}
+      marker.bindPopup(createPopup(csvData[i],marker,i),{minWidth:160});
+    });
+    buildOptimizedRoute();
+  }});
+});
+
+document.getElementById('downloadBtn').addEventListener('click', ()=>{
+  if(!csvData.length){ alert('Нет данных'); return; }
+  const csv=Papa.unparse(csvData);
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob); 
+  const link=document.createElement('a'); 
+  link.href=url; 
+  link.download=csvFileName||'updated.csv';
+  document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+});
+
+document.getElementById('locBtn').addEventListener('click',()=>{ autoFollow=true; requestUserLocation(); });
+document.getElementById('refreshBtn').addEventListener('click',()=>{ buildOptimizedRoute(); });
+document.getElementById('clearBtn').addEventListener('click',()=>{ 
+  csvMarkersLayer.clearLayers(); 
+  routeLayer.clearLayers(); 
+  if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); remainingRouteLayer=null; }
+  document.getElementById('csvFile').value=''; 
+  csvData=[]; activeRouteCoords=[]; osrmCoords=[]; navRouteCoords=[]; 
+  infoDistanceEl.textContent='Длина: —'; 
+  infoDurationEl.textContent='Время: —'; 
+});
+document.getElementById('centerUserBtn').addEventListener('click',()=>{ if(userCoords){ autoFollow=true; centerOnUser(17); } });
+
+// ================= REAL GPS NAVIGATION =================
+function startRealNavigation(){
+  if(!navRouteCoords.length){ alert('Нет маршрута для навигации'); return; }
+  if(!navigator.geolocation){ alert('Геолокация не поддерживается'); return; }
+  if(navWatchId) navigator.geolocation.clearWatch(navWatchId);
+  if(!remainingRouteLayer) remainingRouteLayer = L.layerGroup().addTo(map);
+  navWatchId = navigator.geolocation.watchPosition(pos=>{
+    userCoords=[pos.coords.latitude,pos.coords.longitude];
+    if(!userMarker){ userMarker = L.circleMarker(userCoords,{radius:6,color:'#0077cc',fillColor:'#0077cc',fillOpacity:0.8}).addTo(map).bindPopup('Вы здесь'); }
+    else userMarker.setLatLng(userCoords);
+    if(!userRadius) userRadius = L.circle(userCoords,{radius:50,color:'black',weight:1,fillOpacity:0}).addTo(map);
+    else userRadius.setLatLng(userCoords);
+    checkPointsInUserRadius();
+    if(autoFollow) centerOnUser();
+
+    // Остаток маршрута красной линией
+    if(navRouteCoords.length>0){
+      let nearestIndex=0, minDist=Infinity;
+      for(let i=0;i<navRouteCoords.length;i++){
+        const dx=userCoords[0]-navRouteCoords[i][0], dy=userCoords[1]-navRouteCoords[i][1];
+        const dist=Math.sqrt(dx*dx+dy*dy);
+        if(dist<minDist){ minDist=dist; nearestIndex=i; }
+      }
+      remainingRouteLayer.clearLayers();
+      let points=[[userCoords[0],userCoords[1]], navRouteCoords[nearestIndex]];
+      L.polyline(points,{color:'red',weight:3,opacity:0.9}).addTo(remainingRouteLayer);
+      let remainingPoints=navRouteCoords.slice(nearestIndex);
+      L.polyline(remainingPoints,{color:'red',weight:3,opacity:0.9}).addTo(remainingRouteLayer);
+    
+	// Жёлтая линия 200м
+      let yellowLineCoords=[[userCoords[0],userCoords[1]]];
+      let distAccum = 0;
+      for(let i=nearestIndex; i<navRouteCoords.length-1; i++){
+        const from = L.latLng(navRouteCoords[i]);
+        const to = L.latLng(navRouteCoords[i+1]);
+        const segDist = from.distanceTo(to);
+        if(distAccum + segDist > 200){
+          const remaining = 200 - distAccum;
+          const ratio = remaining/segDist;
+          const lat = from.lat + (to.lat - from.lat) * ratio;
+          const lng = from.lng + (to.lng - from.lng) * ratio;
+          yellowLineCoords.push([lat,lng]);
+          break;
+        } else {
+          yellowLineCoords.push([to.lat,to.lng]);
+          distAccum += segDist;
+        }
+      }
+      L.polyline(yellowLineCoords,{color:'yellow',weight:4,opacity:0.9}).addTo(remainingRouteLayer);
+}
+
+  }, err=>alert('Ошибка GPS'), {enableHighAccuracy:true, maximumAge:0, timeout:5000});
+}
+
+function stopRealNavigation(){ 
+  if(navWatchId){ navigator.geolocation.clearWatch(navWatchId); navWatchId=null; } 
+  if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); } 
+}
+
+document.getElementById('navStartBtn').addEventListener('click', startRealNavigation);
+document.getElementById('navStopBtn').addEventListener('click', stopRealNavigation);
+
+</script>
+</body>
+</html>
