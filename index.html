@@ -15,7 +15,7 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
 .leaflet-control-attribution { display: none !important; }
 
 /* Исходный вид верхней панели */
-#file-input{position:absolute;z-index:1200;left:50%;transform:translateX(-50%);top:10px;background:#fff;padding:6px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.15);display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:95%;}
+#file-input{position:absolute;z-index:1200;left:50%;transform:translateX(-50%);top:10px;background:#fff;padding:6px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.15);display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;max-width:95%;}
 #file-input input[type=file]{font-size:13px;}
 #file-input button{font-size:14px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer;}
 
@@ -148,13 +148,15 @@ let csvMarkersLayer = L.layerGroup().addTo(map);
 let routeLayer = L.layerGroup().addTo(map);
 let remainingRouteLayer = L.layerGroup().addTo(map);
 let polygonLayer = L.layerGroup().addTo(map);
+let pointsPartLayer = L.layerGroup().addTo(map);
 
 // Переключатель слоев
 const overlays = {
   "Точки CSV": csvMarkersLayer,
   "Основной маршрут": routeLayer,
   "Навигация": remainingRouteLayer,
-  "H3 Гексагоны (корень)": polygonLayer
+  "H3 Гексагоны (корень)": polygonLayer,
+  "Точки (1_part)": pointsPartLayer
 };
 const layerControl = L.control.layers(null, overlays, {collapsed: true});
 layerControl.addTo(map);
@@ -198,6 +200,43 @@ fetch('hex.geojson')
   })
   .catch(err => {
     console.warn('Автозагрузка hex.geojson недоступна или файл отсутствует:', err);
+  });
+
+// ===== РЕНДЕР И АВТОЗАГРУЗКА 1_part.geojson (ОТОБРАЖЕНИЕ ТОЛЬКО from_address, cnt) =====
+function render1PartGeoJson(geoData) {
+  pointsPartLayer.clearLayers();
+  L.geoJSON(geoData, {
+    pointToLayer: function (feature, latlng) {
+      return L.circleMarker(latlng, {
+        radius: 5,
+        color: '#1e7e34',
+        fillColor: '#28a745', // Зеленый цвет
+        fillOpacity: 0.85,
+        weight: 1.5
+      });
+    },
+    onEachFeature: function(feature, layer) {
+      if (feature.properties) {
+        let props = feature.properties;
+        let popupText = `<b>from_address:</b> ${props.from_address || '—'}<br>`;
+        popupText += `<b>cnt:</b> ${props.cnt || 0}`;
+        layer.bindPopup(popupText);
+      }
+    }
+  }).addTo(pointsPartLayer);
+}
+
+// Автоматическая загрузка 1_part.geojson из корня сайта
+fetch('1_part.geojson')
+  .then(res => {
+    if(!res.ok) throw new Error('Файл 1_part.geojson не найден в корне');
+    return res.json();
+  })
+  .then(data => {
+    render1PartGeoJson(data);
+  })
+  .catch(err => {
+    console.warn('Автозагрузка 1_part.geojson недоступна или файл отсутствует:', err);
   });
 
 let userMarker = null;
@@ -472,6 +511,7 @@ document.getElementById('clearBtn').addEventListener('click',()=>{
   csvMarkersLayer.clearLayers(); 
   routeLayer.clearLayers(); 
   polygonLayer.clearLayers();
+  pointsPartLayer.clearLayers();
   if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); }
   document.getElementById('csvFile').value=''; 
   csvData=[]; activeRouteCoords=[]; osrmCoords=[]; navRouteCoords=[]; 
