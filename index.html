@@ -14,7 +14,7 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
 /* Скрываем атрибуцию Leaflet */
 .leaflet-control-attribution { display: none !important; }
 
-/* Оригинальный верхний блок с 3 рядами кнопок */
+/* Верхний блок с 3 рядами кнопок */
 #file-input{
   position:absolute;
   z-index:1200;
@@ -32,7 +32,16 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   flex-wrap:wrap;
   max-width:95%;
 }
-#file-input input[type=file]{font-size:13px;}
+#file-input input[type=file]{display:none;}
+.btn-label{
+  font-size:13px;
+  padding:5px 7px;
+  border-radius:6px;
+  border:1px solid #ccc;
+  background:#f7f7f7;
+  cursor:pointer;
+  display:inline-block;
+}
 #file-input button{font-size:14px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer;}
 
 /* Инфо-бокс снизу по центру */
@@ -52,7 +61,7 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   pointer-events:none;
 }
 
-/* Надпись версии в самом углу */
+/* Надпись версии */
 #version-label{
   position:absolute;
   bottom:5px;
@@ -63,7 +72,7 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   text-shadow:0 0 3px rgba(255,255,255,0.8);
 }
 
-/* Кнопки масштаба (+/-) подняты НАД версией 3.0 */
+/* Кнопки масштаба (+/-) подняты НАД версией */
 .leaflet-left .leaflet-control-zoom {
   margin-bottom: 55px !important;
   margin-left: 10px !important;
@@ -83,7 +92,6 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   gap: 10px;
 }
 
-/* Кнопка слоев Leaflet */
 .controls-right-stack .leaflet-control-layers {
   margin: 0 !important;
   box-shadow: 0 2px 6px rgba(0,0,0,0.3) !important;
@@ -91,7 +99,6 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   border-radius: 8px !important;
 }
 
-/* Кнопка центрирования */
 #centerUserBtn{
   background:#fff;
   border:none;
@@ -124,7 +131,12 @@ textarea{resize:none;font-size:13px;}
 <body>
 
 <div id="file-input">
+  <label for="csvFile" class="btn-label">Выберите CSV</label>
   <input type="file" id="csvFile" accept=".csv" />
+  
+  <label for="geoJsonFile" class="btn-label" style="background:#eef6ff;border-color:#0077cc;">Полигон</label>
+  <input type="file" id="geoJsonFile" accept=".geojson,.json" />
+
   <button id="locBtn">GPS</button>
   <button id="refreshBtn">Обновить</button>
   <button id="clearBtn">Очистить</button>
@@ -141,7 +153,6 @@ textarea{resize:none;font-size:13px;}
 
 <div id="map"></div>
 
-<!-- Правый стекируемый блок для Слоев и Центрирования -->
 <div class="controls-right-stack" id="rightStack">
   <button id="centerUserBtn" title="Центрировать">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -154,32 +165,86 @@ textarea{resize:none;font-size:13px;}
   </button>
 </div>
 
-<div id="version-label">версия 3.0</div>
+<div id="version-label">версия 3.1</div>
 
 <script>
 const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// Кнопки зума слева снизу
 L.control.zoom({position:'bottomleft'}).addTo(map);
 
-// Группы слоев
+// Слои
 let csvMarkersLayer = L.layerGroup().addTo(map);
 let routeLayer = L.layerGroup().addTo(map);
 let remainingRouteLayer = L.layerGroup().addTo(map);
+let polygonLayer = L.layerGroup().addTo(map);
 
 // Переключатель слоев
 const overlays = {
   "Точки CSV": csvMarkersLayer,
   "Основной маршрут": routeLayer,
-  "Навигация": remainingRouteLayer
+  "Навигация": remainingRouteLayer,
+  "H3 Гексагоны (корень)": polygonLayer
 };
 const layerControl = L.control.layers(null, overlays, {collapsed: true});
 layerControl.addTo(map);
 
-// Вставляем кнопку слоев над кнопкой центрирования
 const stackEl = document.getElementById('rightStack');
 stackEl.insertBefore(layerControl.getContainer(), document.getElementById('centerUserBtn'));
+
+// ===== РЕНДЕР И АВТОЗАГРУЗКА hex.geojson ИЗ КОРНЯ =====
+function renderGeoJson(geoData) {
+  polygonLayer.clearLayers();
+  const poly = L.geoJSON(geoData, {
+    style: {
+      color: '#ff7800',
+      weight: 2,
+      opacity: 0.85,
+      fillColor: '#ff7800',
+      fillOpacity: 0.15
+    },
+    onEachFeature: function(feature, layer) {
+      if (feature.properties) {
+        let popupText = `<b>h3_id:</b> ${feature.properties.h3_id || feature.properties.hex || ''}<br>`;
+        popupText += `<b>orders:</b> ${feature.properties.total_orders || 0}`;
+        layer.bindPopup(popupText);
+      }
+    }
+  }).addTo(polygonLayer);
+  
+  if (poly.getLayers().length > 0) {
+    map.fitBounds(poly.getBounds());
+  }
+}
+
+// Автоматическая загрузка hex.geojson из корня сайта при старте
+fetch('hex.geojson')
+  .then(res => {
+    if(!res.ok) throw new Error('Файл hex.geojson не найден в корне');
+    return res.json();
+  })
+  .then(data => {
+    renderGeoJson(data);
+  })
+  .catch(err => {
+    console.warn('Автозагрузка hex.geojson недоступна или файл отсутствует:', err);
+  });
+
+// Ручная загрузка альтернативного GeoJSON файла через кнопку
+document.getElementById('geoJsonFile').addEventListener('change', function(ev){
+  const file = ev.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try {
+      const geojson = JSON.parse(e.target.result);
+      renderGeoJson(geojson);
+    } catch(err) {
+      alert('Ошибка при чтении файла GeoJSON');
+    }
+  };
+  reader.readAsText(file);
+});
 
 let userMarker = null;
 let autoFollow = true;
@@ -200,7 +265,7 @@ map.on('movestart zoomstart',()=>{autoFollow=false;});
 
 function centerOnUser(zoom=15){ if(userCoords) map.flyTo(userCoords,zoom,{duration:1.0}); }
 
-// ===== Автообновление статуса точек при попадании в радиус пользователя =====
+// ===== Автообновление статуса точек =====
 function checkPointsInUserRadius(){
   if(!userCoords) return;
   let changed = false;
@@ -299,6 +364,26 @@ function createPopup(point, marker, index){
   copyBtn.addEventListener('click',()=>{ navigator.clipboard.writeText(latInput.value); copyBtn.textContent='✔'; setTimeout(()=>copyBtn.textContent='📋',1000); });
   latDiv.appendChild(latInput); latDiv.appendChild(copyBtn); container.appendChild(latDiv);
 
+  // HEX / H3 INDEX
+  if(point.hex){
+    const hexDiv=document.createElement('div');
+    hexDiv.style.display='flex'; hexDiv.style.gap='4px';
+    const hexInput=document.createElement('input');
+    hexInput.type='text';
+    hexInput.value=`hex: ${point.hex}`;
+    hexInput.readOnly=true;
+    hexInput.style.border='none';
+    hexInput.style.background='transparent';
+    hexInput.style.flexGrow='1';
+    hexInput.style.fontSize='13px';
+    const hexCopyBtn=document.createElement('button');
+    hexCopyBtn.textContent='📋';
+    hexCopyBtn.title='Скопировать hex';
+    hexCopyBtn.style.fontSize='14px';
+    hexCopyBtn.addEventListener('click',()=>{ navigator.clipboard.writeText(point.hex); hexCopyBtn.textContent='✔'; setTimeout(()=>hexCopyBtn.textContent='📋',1000); });
+    hexDiv.appendChild(hexInput); hexDiv.appendChild(hexCopyBtn); container.appendChild(hexDiv);
+  }
+
   // STATUS
   const statusDiv = document.createElement('div');
   statusDiv.style.display = 'flex';
@@ -347,11 +432,11 @@ function createPopup(point, marker, index){
     point.comment = commentInput.value; csvData[index].comment = commentInput.value; originalComment = commentInput.value;
     commentSave.style.display='none'; commentCancel.style.display='none';
   });
-  commentCancel.addEventListener('click',()=>{ commentInput.value = originalComment; commentSave.style.display='none'; commentSave.style.display='none'; commentCancel.style.display='none'; });
+  commentCancel.addEventListener('click',()=>{ commentInput.value = originalComment; commentSave.style.display='none'; commentCancel.style.display='none'; });
   commentDiv.appendChild(commentLabel); commentDiv.appendChild(commentInput); commentDiv.appendChild(commentSave); commentDiv.appendChild(commentCancel);
   container.appendChild(commentDiv);
 
-  // GT_NAME (read-only)
+  // GT_NAME
   const gtDiv = document.createElement('div');
   gtDiv.style.display='flex';
   gtDiv.style.flexDirection='column';
@@ -389,11 +474,12 @@ document.getElementById('csvFile').addEventListener('change', function(ev){
     data.forEach((r,i)=>{
       const lat = Number(r.lat!==undefined ? r.lat : r.latitude);
       const lon = Number(r.lon!==undefined ? r.lon : r.longitude);
+      const hex = r.hex || r.h3x10_id || r.h3 || "";
       const status = (String(r.status) === "1") ? "1" : "0";
       const comment=r.comment||"";
       const count=r.count||"";
       const gt_name=r.gt_name||"";
-      csvData.push({lat,lon,status,comment,count,gt_name});
+      csvData.push({lat,lon,hex,status,comment,count,gt_name});
       const color=status==="0"?'red':'green';
       const marker=L.circleMarker([lat,lon],{radius:6,color:color,fillColor:color,fillOpacity:0.8}).addTo(csvMarkersLayer);
       csvData[i].marker = marker;
@@ -431,8 +517,10 @@ document.getElementById('refreshBtn').addEventListener('click',()=>{ buildOptimi
 document.getElementById('clearBtn').addEventListener('click',()=>{ 
   csvMarkersLayer.clearLayers(); 
   routeLayer.clearLayers(); 
+  polygonLayer.clearLayers();
   if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); }
   document.getElementById('csvFile').value=''; 
+  document.getElementById('geoJsonFile').value='';
   csvData=[]; activeRouteCoords=[]; osrmCoords=[]; navRouteCoords=[]; 
   infoDistanceEl.textContent='Длина: —'; 
   infoDurationEl.textContent='Время: —'; 
