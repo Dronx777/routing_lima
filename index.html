@@ -152,6 +152,7 @@ let polygonLayer = L.layerGroup().addTo(map);
 // Слои GeoJSON точек (НЕ добавляются на карту по умолчанию)
 let pointsPartLayer = L.layerGroup();
 let pointsPart2Layer = L.layerGroup();
+let pointsPart3Layer = L.layerGroup();
 
 // Переключатель слоев
 const overlays = {
@@ -160,7 +161,8 @@ const overlays = {
   "Навигация": remainingRouteLayer,
   "H3 Гексагоны (корень)": polygonLayer,
   "Точки (1_part)": pointsPartLayer,
-  "Точки (2_part)": pointsPart2Layer
+  "Точки (2_part)": pointsPart2Layer,
+  "Точки (3_part)": pointsPart3Layer
 };
 const layerControl = L.control.layers(null, overlays, {collapsed: true});
 layerControl.addTo(map);
@@ -276,6 +278,42 @@ fetch('2_part.geojson')
   })
   .catch(err => {
     console.warn('Автозагрузка 2_part.geojson недоступна или файл отсутствует:', err);
+  });
+
+// ===== РЕНДЕР И АВТОЗАГРУЗКА 3_part.geojson (ГОЛУБЫЕ КРУЖОЧКИ, ВЫКЛ ПО УМОЛЧАНИЮ) =====
+function render3PartGeoJson(geoData) {
+  pointsPart3Layer.clearLayers();
+  L.geoJSON(geoData, {
+    pointToLayer: function (feature, latlng) {
+      return L.circleMarker(latlng, {
+        radius: 5,
+        color: '#0077cc',
+        fillColor: '#17a2b8', // Голубой цвет
+        fillOpacity: 0.85,
+        weight: 1.5
+      });
+    },
+    onEachFeature: function(feature, layer) {
+      if (feature.properties) {
+        let props = feature.properties;
+        let popupText = `<b>from_address:</b> ${props.from_address || '—'}<br>`;
+        popupText += `<b>cnt:</b> ${props.cnt || 0}`;
+        layer.bindPopup(popupText);
+      }
+    }
+  }).addTo(pointsPart3Layer);
+}
+
+fetch('3_part.geojson')
+  .then(res => {
+    if(!res.ok) throw new Error('Файл 3_part.geojson не найден в корне');
+    return res.json();
+  })
+  .then(data => {
+    render3PartGeoJson(data);
+  })
+  .catch(err => {
+    console.warn('Автозагрузка 3_part.geojson недоступна или файл отсутствует:', err);
   });
 
 let userMarker = null;
@@ -552,6 +590,7 @@ document.getElementById('clearBtn').addEventListener('click',()=>{
   polygonLayer.clearLayers();
   pointsPartLayer.clearLayers();
   pointsPart2Layer.clearLayers();
+  pointsPart3Layer.clearLayers();
   if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); }
   document.getElementById('csvFile').value=''; 
   csvData=[]; activeRouteCoords=[]; osrmCoords=[]; navRouteCoords=[]; 
