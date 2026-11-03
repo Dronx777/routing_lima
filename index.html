@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Мобильный навигатор с OSRM Trip</title>
+<title>Мобильный навигатор с OSRM Trip и трекером</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -15,9 +15,30 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
 .leaflet-control-attribution { display: none !important; }
 
 /* Исходный вид верхней панели */
-#file-input{position:absolute;z-index:1200;left:50%;transform:translateX(-50%);top:10px;background:#fff;padding:6px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.15);display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;max-width:95%;}
+#file-input{position:absolute;z-index:1200;left:50%;transform:translateX(-50%);top:10px;background:#fff;padding:6px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.15);display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;max-width:96%;}
 #file-input input[type=file]{font-size:13px;}
-#file-input button{font-size:14px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer;}
+#file-input button{font-size:13px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer;}
+#file-input button:active{background:#eee;}
+#file-input button.active{background:#0077cc;color:#fff;border-color:#0077cc;}
+
+/* Индикатор записи трека */
+#rec-indicator {
+  display:none;
+  align-items:center;
+  gap:5px;
+  font-size:12px;
+  font-weight:600;
+  color:#d90429;
+  padding:0 4px;
+}
+#rec-dot {
+  width:9px;
+  height:9px;
+  background:#d90429;
+  border-radius:50%;
+}
+.blink { animation: blink 1s infinite; }
+@keyframes blink { 0%{opacity:1} 50%{opacity:0} 100%{opacity:1} }
 
 /* Инфо-бокс снизу по центру */
 #info-box{
@@ -27,10 +48,10 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   transform:translateX(-50%);
   z-index:1000;
   background:rgba(255,255,255,0.95);
-  padding:6px 10px;
+  padding:6px 12px;
   border-radius:8px;
   box-shadow:0 2px 5px rgba(0,0,0,0.3);
-  min-width:140px;
+  min-width:160px;
   text-align:center;
   font-size:13px;
   pointer-events:none;
@@ -110,15 +131,26 @@ textarea{resize:none;font-size:13px;}
   <button id="locBtn">GPS</button>
   <button id="refreshBtn">Обновить</button>
   <button id="clearBtn">Очистить</button>
-  <button id="downloadBtn">Сохранить</button>
-  <button id="navStartBtn">Старт</button>
-  <button id="navStopBtn">Стоп</button>
+  <button id="downloadBtn">Сохранить CSV</button>
+  <button id="navStartBtn">Старт Нав</button>
+  <button id="navStopBtn">Стоп Нав</button>
+
+  <!-- Блок управления трекером -->
+  <button id="trackStartBtn" title="Начать запись пути">● Запись</button>
+  <button id="trackStopBtn" title="Остановить запись">■ Стоп трек</button>
+  <button id="trackSaveBtn" title="Скачать записанный трек">💾 Трек</button>
+  <div id="rec-indicator"><div id="rec-dot" class="blink"></div>REC</div>
 </div>
 
 <div id="info-box">
   <b>Маршрут</b><br>
   <span id="info-distance">Длина: —</span><br>
   <span id="info-duration">Время: —</span>
+  <div id="track-info-container" style="border-top:1px solid #ddd; margin-top:4px; padding-top:4px;">
+    <b>Записано</b><br>
+    <span>Дистанция: <span id="track-dist">0.00</span> км</span><br>
+    <span>Время: <span id="track-time">0:00</span></span>
+  </div>
 </div>
 
 <div id="map"></div>
@@ -135,7 +167,7 @@ textarea{resize:none;font-size:13px;}
   </button>
 </div>
 
-<div id="version-label">версия 3.1</div>
+<div id="version-label">версия 3.2 (с трекером)</div>
 
 <script>
 const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
@@ -147,6 +179,7 @@ L.control.zoom({position:'bottomleft'}).addTo(map);
 let csvMarkersLayer = L.layerGroup().addTo(map);
 let routeLayer = L.layerGroup().addTo(map);
 let remainingRouteLayer = L.layerGroup().addTo(map);
+let recordedTrackLayer = L.layerGroup().addTo(map); // Слой записанного пути
 let polygonLayer = L.layerGroup().addTo(map);
 
 // Слои GeoJSON точек (НЕ добавляются на карту по умолчанию)
@@ -159,6 +192,7 @@ const overlays = {
   "Точки CSV": csvMarkersLayer,
   "Основной маршрут": routeLayer,
   "Навигация": remainingRouteLayer,
+  "Записанный трек": recordedTrackLayer,
   "H3 Гексагоны (корень)": polygonLayer,
   "Точки (1_part)": pointsPartLayer,
   "Точки (2_part)": pointsPart2Layer,
@@ -170,16 +204,16 @@ layerControl.addTo(map);
 const stackEl = document.getElementById('rightStack');
 stackEl.insertBefore(layerControl.getContainer(), document.getElementById('centerUserBtn'));
 
-// ===== РЕНДЕР И АВТОЗАГРУЗКА hex.geojson ИЗ КОРНЯ =====
+// ===== РЕНДЕР И АВТОЗАГРУЗКА hex.geojson =====
 function renderGeoJson(geoData) {
   polygonLayer.clearLayers();
   const poly = L.geoJSON(geoData, {
     style: {
-      color: '#000000',      // Черный контур
-      weight: 1.5,           // Толщина линии
-      opacity: 0.85,         // Прозрачность линий
-      fillColor: '#000000',  // Заливка
-      fillOpacity: 0.08     // Прозрачность заливки
+      color: '#000000',
+      weight: 1.5,
+      opacity: 0.85,
+      fillColor: '#000000',
+      fillOpacity: 0.08
     },
     onEachFeature: function(feature, layer) {
       if (feature.properties) {
@@ -195,127 +229,43 @@ function renderGeoJson(geoData) {
   }
 }
 
-// Автоматическая загрузка hex.geojson из корня сайта при старте
 fetch('hex.geojson')
   .then(res => {
     if(!res.ok) throw new Error('Файл hex.geojson не найден в корне');
     return res.json();
   })
-  .then(data => {
-    renderGeoJson(data);
-  })
-  .catch(err => {
-    console.warn('Автозагрузка hex.geojson недоступна или файл отсутствует:', err);
-  });
+  .then(data => renderGeoJson(data))
+  .catch(err => console.warn('Автозагрузка hex.geojson недоступна:', err));
 
-// ===== РЕНДЕР И АВТОЗАГРУЗКА 1_part.geojson (ЗЕЛЕНЫЕ КРУЖОЧКИ, ВЫКЛ ПО УМОЛЧАНИЮ) =====
-function render1PartGeoJson(geoData) {
-  pointsPartLayer.clearLayers();
+// ===== РЕНДЕР И АВТОЗАГРУЗКА ЧАСТЕЙ GEOJSON =====
+function renderColoredPoints(geoData, layer, color, fillColor) {
+  layer.clearLayers();
   L.geoJSON(geoData, {
     pointToLayer: function (feature, latlng) {
       return L.circleMarker(latlng, {
         radius: 5,
-        color: '#1e7e34',
-        fillColor: '#28a745', // Зеленый цвет
+        color: color,
+        fillColor: fillColor,
         fillOpacity: 0.85,
         weight: 1.5
       });
     },
-    onEachFeature: function(feature, layer) {
+    onEachFeature: function(feature, layerTarget) {
       if (feature.properties) {
         let props = feature.properties;
         let popupText = `<b>from_address:</b> ${props.from_address || '—'}<br>`;
         popupText += `<b>cnt:</b> ${props.cnt || 0}`;
-        layer.bindPopup(popupText);
+        layerTarget.bindPopup(popupText);
       }
     }
-  }).addTo(pointsPartLayer);
+  }).addTo(layer);
 }
 
-fetch('1_part.geojson')
-  .then(res => {
-    if(!res.ok) throw new Error('Файл 1_part.geojson не найден в корне');
-    return res.json();
-  })
-  .then(data => {
-    render1PartGeoJson(data);
-  })
-  .catch(err => {
-    console.warn('Автозагрузка 1_part.geojson недоступна или файл отсутствует:', err);
-  });
+fetch('1_part.geojson').then(r=>r.ok?r.json():null).then(d=>{if(d) renderColoredPoints(d, pointsPartLayer, '#1e7e34', '#28a745');}).catch(()=>{});
+fetch('2_part.geojson').then(r=>r.ok?r.json():null).then(d=>{if(d) renderColoredPoints(d, pointsPart2Layer, '#c7511f', '#fd7e14');}).catch(()=>{});
+fetch('3_part.geojson').then(r=>r.ok?r.json():null).then(d=>{if(d) renderColoredPoints(d, pointsPart3Layer, '#0077cc', '#17a2b8');}).catch(()=>{});
 
-// ===== РЕНДЕР И АВТОЗАГРУЗКА 2_part.geojson (ОРАНЖЕВЫЕ КРУЖОЧКИ, ВЫКЛ ПО УМОЛЧАНИЮ) =====
-function render2PartGeoJson(geoData) {
-  pointsPart2Layer.clearLayers();
-  L.geoJSON(geoData, {
-    pointToLayer: function (feature, latlng) {
-      return L.circleMarker(latlng, {
-        radius: 5,
-        color: '#c7511f',
-        fillColor: '#fd7e14', // Оранжевый цвет
-        fillOpacity: 0.85,
-        weight: 1.5
-      });
-    },
-    onEachFeature: function(feature, layer) {
-      if (feature.properties) {
-        let props = feature.properties;
-        let popupText = `<b>from_address:</b> ${props.from_address || '—'}<br>`;
-        popupText += `<b>cnt:</b> ${props.cnt || 0}`;
-        layer.bindPopup(popupText);
-      }
-    }
-  }).addTo(pointsPart2Layer);
-}
-
-fetch('2_part.geojson')
-  .then(res => {
-    if(!res.ok) throw new Error('Файл 2_part.geojson не найден в корне');
-    return res.json();
-  })
-  .then(data => {
-    render2PartGeoJson(data);
-  })
-  .catch(err => {
-    console.warn('Автозагрузка 2_part.geojson недоступна или файл отсутствует:', err);
-  });
-
-// ===== РЕНДЕР И АВТОЗАГРУЗКА 3_part.geojson (ГОЛУБЫЕ КРУЖОЧКИ, ВЫКЛ ПО УМОЛЧАНИЮ) =====
-function render3PartGeoJson(geoData) {
-  pointsPart3Layer.clearLayers();
-  L.geoJSON(geoData, {
-    pointToLayer: function (feature, latlng) {
-      return L.circleMarker(latlng, {
-        radius: 5,
-        color: '#0077cc',
-        fillColor: '#17a2b8', // Голубой цвет
-        fillOpacity: 0.85,
-        weight: 1.5
-      });
-    },
-    onEachFeature: function(feature, layer) {
-      if (feature.properties) {
-        let props = feature.properties;
-        let popupText = `<b>from_address:</b> ${props.from_address || '—'}<br>`;
-        popupText += `<b>cnt:</b> ${props.cnt || 0}`;
-        layer.bindPopup(popupText);
-      }
-    }
-  }).addTo(pointsPart3Layer);
-}
-
-fetch('3_part.geojson')
-  .then(res => {
-    if(!res.ok) throw new Error('Файл 3_part.geojson не найден в корне');
-    return res.json();
-  })
-  .then(data => {
-    render3PartGeoJson(data);
-  })
-  .catch(err => {
-    console.warn('Автозагрузка 3_part.geojson недоступна или файл отсутствует:', err);
-  });
-
+// ================= ПЕРЕМЕННЫЕ ПРИЛОЖЕНИЯ =================
 let userMarker = null;
 let autoFollow = true;
 let csvData = [];
@@ -328,12 +278,37 @@ let userRadius = null;
 let navRouteCoords = [];
 let navWatchId = null;
 
+// Переменные трекера
+let isTracking = false;
+let recordedTrack = [];
+let trackDistance = 0;
+let lastTrackPos = null;
+let trackStartTime = null;
+let trackTimerInterval = null;
+let lastFix = null;
+let trackRecordInterval = null;
+let trackPolyline = null;
+
 const infoDistanceEl = document.getElementById('info-distance');
 const infoDurationEl = document.getElementById('info-duration');
+const trackDistEl = document.getElementById('track-dist');
+const trackTimeEl = document.getElementById('track-time');
+const recIndicatorEl = document.getElementById('rec-indicator');
 
-map.on('movestart zoomstart',()=>{autoFollow=false;});
+map.on('movestart zoomstart',()=>{ autoFollow = false; });
 
 function centerOnUser(zoom=15){ if(userCoords) map.flyTo(userCoords,zoom,{duration:1.0}); }
+
+// Расчет расстояния (Haversine)
+function haversineDist(a, b){
+  const R = 6371000;
+  const dLat = (b[0]-a[0]) * Math.PI / 180;
+  const dLon = (b[1]-a[1]) * Math.PI / 180;
+  const lat1 = a[0] * Math.PI / 180;
+  const lat2 = b[0] * Math.PI / 180;
+  const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
 
 // ===== Автообновление статуса точек =====
 function checkPointsInUserRadius(){
@@ -346,10 +321,7 @@ function checkPointsInUserRadius(){
       if(d <= 50){
         p.status = "1";
         if(p.marker){
-          p.marker.setStyle({
-            color:'green',
-            fillColor:'green'
-          });
+          p.marker.setStyle({ color:'green', fillColor:'green' });
         }
         changed = true;
       }
@@ -362,19 +334,111 @@ function checkPointsInUserRadius(){
 }
 
 function updateUserPosition(pos){ 
-  userCoords=[pos.coords.latitude,pos.coords.longitude]; 
-  if(!userMarker){ userMarker = L.circleMarker(userCoords,{radius:6,color:'#0077cc',fillColor:'#0077cc',fillOpacity:0.8}).addTo(map).bindPopup('Вы здесь'); }
-  else userMarker.setLatLng(userCoords);
-  if(!userRadius) userRadius = L.circle(userCoords,{radius:50,color:'black',weight:1,fillOpacity:0}).addTo(map);
-  else userRadius.setLatLng(userCoords);
+  userCoords = [pos.coords.latitude, pos.coords.longitude]; 
+  lastFix = {
+    lat: userCoords[0],
+    lon: userCoords[1],
+    speed: pos.coords.speed || 0,
+    time: Date.now()
+  };
+
+  if(!userMarker){ 
+    userMarker = L.circleMarker(userCoords,{radius:6,color:'#0077cc',fillColor:'#0077cc',fillOpacity:0.8}).addTo(map).bindPopup('Вы здесь'); 
+  } else {
+    userMarker.setLatLng(userCoords);
+  }
+
+  if(!userRadius) {
+    userRadius = L.circle(userCoords,{radius:50,color:'black',weight:1,fillOpacity:0}).addTo(map);
+  } else {
+    userRadius.setLatLng(userCoords);
+  }
+
   checkPointsInUserRadius();
   if(autoFollow) centerOnUser(); 
 }
 
 function requestUserLocation(){ 
-  if(!navigator.geolocation){alert('Геолокация не поддерживается');return;} 
-  navigator.geolocation.getCurrentPosition(updateUserPosition,err=>alert('GPS недоступен'),{enableHighAccuracy:true}); 
+  if(!navigator.geolocation){ alert('Геолокация не поддерживается'); return; } 
+  navigator.geolocation.getCurrentPosition(updateUserPosition, err=>alert('GPS недоступен'), {enableHighAccuracy:true}); 
 }
+
+// ================= ЛОГИКА ТРЕКЕРА =================
+function recordTrackPoint(){
+  if(!isTracking || !lastFix) return;
+  const {lat, lon, speed, time} = lastFix;
+
+  // Игнорируем координаты, если стоим на месте (скорость < 0.5 м/с)
+  if(speed < 0.5 && lastTrackPos) return;
+
+  if(lastTrackPos){
+    const d = haversineDist(lastTrackPos, [lat, lon]);
+    if(d < 5) return; // Фильтр шума GPS (дистанция меньше 5м не пишется)
+    trackDistance += d;
+  }
+
+  lastTrackPos = [lat, lon];
+  recordedTrack.push({lat, lon, time, speed, dist: trackDistance});
+
+  // Обновление линии трека на карте
+  if(!trackPolyline){
+    trackPolyline = L.polyline([[lat, lon]], {color: '#d90429', weight: 4, opacity: 0.85}).addTo(recordedTrackLayer);
+  } else {
+    trackPolyline.addLatLng([lat, lon]);
+  }
+
+  L.circleMarker([lat, lon], {radius: 2, color: '#d90429', fillColor: '#d90429'}).addTo(recordedTrackLayer);
+  trackDistEl.textContent = (trackDistance / 1000).toFixed(2);
+}
+
+function startTrackTimer(){
+  trackStartTime = Date.now();
+  trackTimerInterval = setInterval(()=>{
+    const sec = Math.floor((Date.now() - trackStartTime)/1000);
+    trackTimeEl.textContent = Math.floor(sec/60) + ':' + String(sec%60).padStart(2,'0');
+  }, 1000);
+}
+
+function stopTrackTimer(){
+  clearInterval(trackTimerInterval);
+}
+
+document.getElementById('trackStartBtn').addEventListener('click', ()=>{
+  if(isTracking) return;
+  isTracking = true;
+  document.getElementById('trackStartBtn').classList.add('active');
+  recIndicatorEl.style.display = 'inline-flex';
+  
+  if(!navWatchId){
+    requestUserLocation();
+  }
+  startTrackTimer();
+  trackRecordInterval = setInterval(recordTrackPoint, 3000);
+});
+
+document.getElementById('trackStopBtn').addEventListener('click', ()=>{
+  if(!isTracking) return;
+  isTracking = false;
+  document.getElementById('trackStartBtn').classList.remove('active');
+  recIndicatorEl.style.display = 'none';
+  
+  clearInterval(trackRecordInterval);
+  stopTrackTimer();
+});
+
+document.getElementById('trackSaveBtn').addEventListener('click', ()=>{
+  if(!recordedTrack.length){ alert('Трек пуст'); return; }
+  let csv = 'lat,lon,time,speed_mps,distance_m\n';
+  recordedTrack.forEach(p=>{
+    csv += `${p.lat},${p.lon},${p.time},${p.speed.toFixed(2)},${p.dist.toFixed(2)}\n`;
+  });
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const now = new Date().toISOString().slice(0,10);
+  a.download = `track_${now}.csv`;
+  a.click();
+});
 
 // ================= Build OSRM Route =================
 function buildOptimizedRoute(){
@@ -410,7 +474,7 @@ function buildOptimizedRoute(){
     .catch(err=>{ alert('Ошибка OSRM'); console.error(err); });
 }
 
-// ================= CREATE POPUP =================
+// ================= POPUP =================
 function createPopup(point, marker, index){
   const container=document.createElement('div');
   container.style.display='flex'; container.style.flexDirection='column'; container.style.gap='4px';
@@ -434,7 +498,7 @@ function createPopup(point, marker, index){
   copyBtn.addEventListener('click',()=>{ navigator.clipboard.writeText(latInput.value); copyBtn.textContent='✔'; setTimeout(()=>copyBtn.textContent='📋',1000); });
   latDiv.appendChild(latInput); latDiv.appendChild(copyBtn); container.appendChild(latDiv);
 
-  // HEX / H3 INDEX
+  // HEX
   if(point.hex){
     const hexDiv=document.createElement('div');
     hexDiv.style.display='flex'; hexDiv.style.gap='4px';
@@ -508,25 +572,12 @@ function createPopup(point, marker, index){
 
   // GT_NAME
   const gtDiv = document.createElement('div');
-  gtDiv.style.display='flex';
-  gtDiv.style.flexDirection='column';
-  gtDiv.style.gap='4px';
-
-  const gtLabel = document.createElement('span');
-  gtLabel.textContent='gt_name:';
-
+  gtDiv.style.display='flex'; gtDiv.style.flexDirection='column'; gtDiv.style.gap='4px';
+  const gtLabel = document.createElement('span'); gtLabel.textContent='gt_name:';
   const gtInput = document.createElement('input');
-  gtInput.type='text';
-  gtInput.value = point.gt_name || "";
-  gtInput.readOnly = true;
-  gtInput.style.border='none';
-  gtInput.style.background='transparent';
-  gtInput.style.fontSize='13px';
-
-  gtDiv.appendChild(gtLabel);
-  gtDiv.appendChild(gtInput);
-
-  container.appendChild(gtDiv);
+  gtInput.type='text'; gtInput.value = point.gt_name || ""; gtInput.readOnly = true;
+  gtInput.style.border='none'; gtInput.style.background='transparent'; gtInput.style.fontSize='13px';
+  gtDiv.appendChild(gtLabel); gtDiv.appendChild(gtInput); container.appendChild(gtDiv);
 
   return container;
 }
@@ -591,29 +642,27 @@ document.getElementById('clearBtn').addEventListener('click',()=>{
   pointsPartLayer.clearLayers();
   pointsPart2Layer.clearLayers();
   pointsPart3Layer.clearLayers();
+  recordedTrackLayer.clearLayers();
   if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); }
   document.getElementById('csvFile').value=''; 
   csvData=[]; activeRouteCoords=[]; osrmCoords=[]; navRouteCoords=[]; 
+  recordedTrack=[]; trackDistance=0; lastTrackPos=null; trackPolyline=null;
   infoDistanceEl.textContent='Длина: —'; 
-  infoDurationEl.textContent='Время: —'; 
+  infoDurationEl.textContent='Время: —';
+  trackDistEl.textContent='0.00';
+  trackTimeEl.textContent='0:00';
 });
 document.getElementById('centerUserBtn').addEventListener('click',()=>{ if(userCoords){ autoFollow=true; centerOnUser(17); } });
 
-// ================= REAL GPS NAVIGATION =================
+// ================= НАВИГАЦИЯ =================
 function startRealNavigation(){
   if(!navRouteCoords.length){ alert('Нет маршрута для навигации'); return; }
   if(!navigator.geolocation){ alert('Геолокация не поддерживается'); return; }
   if(navWatchId) navigator.geolocation.clearWatch(navWatchId);
   navWatchId = navigator.geolocation.watchPosition(pos=>{
-    userCoords=[pos.coords.latitude,pos.coords.longitude];
-    if(!userMarker){ userMarker = L.circleMarker(userCoords,{radius:6,color:'#0077cc',fillColor:'#0077cc',fillOpacity:0.8}).addTo(map).bindPopup('Вы здесь'); }
-    else userMarker.setLatLng(userCoords);
-    if(!userRadius) userRadius = L.circle(userCoords,{radius:50,color:'black',weight:1,fillOpacity:0}).addTo(map);
-    else userRadius.setLatLng(userCoords);
-    checkPointsInUserRadius();
-    if(autoFollow) centerOnUser();
+    updateUserPosition(pos);
 
-    if(navRouteCoords.length>0){
+    if(navRouteCoords.length>0 && userCoords){
       let nearestIndex=0, minDist=Infinity;
       for(let i=0;i<navRouteCoords.length;i++){
         const dx=userCoords[0]-navRouteCoords[i][0], dy=userCoords[1]-navRouteCoords[i][1];
