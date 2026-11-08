@@ -40,6 +40,30 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
 .blink { animation: blink 1s infinite; }
 @keyframes blink { 0%{opacity:1} 50%{opacity:0} 100%{opacity:1} }
 
+/* Навигационная синяя стрелка */
+.nav-arrow-casing {
+  stroke: #ffffff !important;
+  stroke-width: 9 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  opacity: 0.95;
+}
+.nav-arrow-main {
+  stroke: #0077ff !important;
+  stroke-width: 6 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  opacity: 1;
+}
+.nav-heading-arrow {
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-bottom: 18px solid #0077ff;
+  filter: drop-shadow(0 0 2px #ffffff);
+}
+
 /* Инфо-бокс снизу по центру */
 #info-box{
   position:absolute;
@@ -132,7 +156,6 @@ textarea{resize:none;font-size:13px;}
   <button id="refreshBtn">Обновить</button>
   <button id="clearBtn">Очистить</button>
   
-  <!-- Переставленные кнопки -->
   <button id="navStartBtn">Старт Нав</button>
   <button id="navStopBtn">Стоп Нав</button>
   <button id="trackStartBtn" title="Начать запись пути">● Запись трека</button>
@@ -168,7 +191,7 @@ textarea{resize:none;font-size:13px;}
   </button>
 </div>
 
-<div id="version-label">версия 3.3 (с трекером)</div>
+<div id="version-label">версия 3.4 (навигационная стрела)</div>
 
 <script>
 const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
@@ -176,19 +199,16 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 L.control.zoom({position:'bottomleft'}).addTo(map);
 
-// Слои (активные по умолчанию)
 let csvMarkersLayer = L.layerGroup().addTo(map);
 let routeLayer = L.layerGroup().addTo(map);
 let remainingRouteLayer = L.layerGroup().addTo(map);
 let recordedTrackLayer = L.layerGroup().addTo(map);
 let polygonLayer = L.layerGroup().addTo(map);
 
-// Слои GeoJSON точек (НЕ добавляются на карту по умолчанию)
 let pointsPartLayer = L.layerGroup();
 let pointsPart2Layer = L.layerGroup();
 let pointsPart3Layer = L.layerGroup();
 
-// Переключатель слоев
 const overlays = {
   "Точки CSV": csvMarkersLayer,
   "Основной маршрут": routeLayer,
@@ -238,7 +258,7 @@ fetch('hex.geojson')
   .then(data => renderGeoJson(data))
   .catch(err => console.warn('Автозагрузка hex.geojson недоступна:', err));
 
-// ===== РЕНДЕР И АВТОЗАГРУЗКА ЧАСТЕЙ GEOJSON =====
+// ===== GEOJSON СЛОИ =====
 function renderColoredPoints(geoData, layer, color, fillColor) {
   layer.clearLayers();
   L.geoJSON(geoData, {
@@ -266,7 +286,7 @@ fetch('1_part.geojson').then(r=>r.ok?r.json():null).then(d=>{if(d) renderColored
 fetch('2_part.geojson').then(r=>r.ok?r.json():null).then(d=>{if(d) renderColoredPoints(d, pointsPart2Layer, '#c7511f', '#fd7e14');}).catch(()=>{});
 fetch('3_part.geojson').then(r=>r.ok?r.json():null).then(d=>{if(d) renderColoredPoints(d, pointsPart3Layer, '#0077cc', '#17a2b8');}).catch(()=>{});
 
-// ================= ПЕРЕМЕННЫЕ ПРИЛОЖЕНИЯ =================
+// ================= ПЕРЕМЕННЫЕ =================
 let userMarker = null;
 let autoFollow = true;
 let csvData = [];
@@ -279,7 +299,6 @@ let userRadius = null;
 let navRouteCoords = [];
 let navWatchId = null;
 
-// Переменные трекера
 let isTracking = false;
 let recordedTrack = [];
 let trackDistance = 0;
@@ -300,7 +319,6 @@ map.on('movestart zoomstart',()=>{ autoFollow = false; });
 
 function centerOnUser(zoom=15){ if(userCoords) map.flyTo(userCoords,zoom,{duration:1.0}); }
 
-// Расчет расстояния (Haversine)
 function haversineDist(a, b){
   const R = 6371000;
   const dLat = (b[0]-a[0]) * Math.PI / 180;
@@ -311,7 +329,6 @@ function haversineDist(a, b){
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-// ===== Автообновление статуса точек =====
 function checkPointsInUserRadius(){
   if(!userCoords) return;
   let changed = false;
@@ -479,7 +496,6 @@ function createPopup(point, marker, index){
   container.style.display='flex'; container.style.flexDirection='column'; container.style.gap='4px';
   container.style.fontSize='14px';
 
-  // LAT/LON
   const latDiv=document.createElement('div');
   latDiv.style.display='flex'; latDiv.style.gap='4px';
   const latInput=document.createElement('input');
@@ -497,7 +513,6 @@ function createPopup(point, marker, index){
   copyBtn.addEventListener('click',()=>{ navigator.clipboard.writeText(latInput.value); copyBtn.textContent='✔'; setTimeout(()=>copyBtn.textContent='📋',1000); });
   latDiv.appendChild(latInput); latDiv.appendChild(copyBtn); container.appendChild(latDiv);
 
-  // HEX
   if(point.hex){
     const hexDiv=document.createElement('div');
     hexDiv.style.display='flex'; hexDiv.style.gap='4px';
@@ -517,7 +532,6 @@ function createPopup(point, marker, index){
     hexDiv.appendChild(hexInput); hexDiv.appendChild(hexCopyBtn); container.appendChild(hexDiv);
   }
 
-  // STATUS
   const statusDiv = document.createElement('div');
   statusDiv.style.display = 'flex';
   statusDiv.style.flexDirection = 'column';
@@ -549,7 +563,6 @@ function createPopup(point, marker, index){
   statusDiv.appendChild(statusLabel); statusDiv.appendChild(btnContainer); statusDiv.appendChild(saveBtn); statusDiv.appendChild(cancelBtn);
   container.appendChild(statusDiv);
 
-  // COMMENT
   const commentDiv=document.createElement('div');
   commentDiv.style.display='flex'; commentDiv.style.flexDirection='column'; commentDiv.style.gap='4px';
   const commentLabel=document.createElement('span'); commentLabel.textContent='comment:';
@@ -569,7 +582,6 @@ function createPopup(point, marker, index){
   commentDiv.appendChild(commentLabel); commentDiv.appendChild(commentInput); commentDiv.appendChild(commentSave); commentDiv.appendChild(commentCancel);
   container.appendChild(commentDiv);
 
-  // GT_NAME
   const gtDiv = document.createElement('div');
   gtDiv.style.display='flex'; gtDiv.style.flexDirection='column'; gtDiv.style.gap='4px';
   const gtLabel = document.createElement('span'); gtLabel.textContent='gt_name:';
@@ -655,7 +667,6 @@ document.getElementById('clearBtn').addEventListener('click',()=>{
   trackDistEl.textContent='0.00';
   trackTimeEl.textContent='0:00';
   
-  // Сброс активных состояний кнопок
   document.getElementById('navStartBtn').classList.remove('active');
   document.getElementById('trackStartBtn').classList.remove('active');
   recIndicatorEl.style.display = 'none';
@@ -669,7 +680,6 @@ function startRealNavigation(){
   if(!navRouteCoords.length){ alert('Нет маршрута для навигации'); return; }
   if(!navigator.geolocation){ alert('Геолокация не поддерживается'); return; }
   
-  // Подсветка кнопки Старт Нав
   document.getElementById('navStartBtn').classList.add('active');
 
   if(navWatchId) navigator.geolocation.clearWatch(navWatchId);
@@ -684,12 +694,15 @@ function startRealNavigation(){
         if(dist<minDist){ minDist=dist; nearestIndex=i; }
       }
       remainingRouteLayer.clearLayers();
+
+      // Оставшийся маршрут тонкой линией
       let points=[[userCoords[0],userCoords[1]], navRouteCoords[nearestIndex]];
-      L.polyline(points,{color:'red',weight:3,opacity:0.9}).addTo(remainingRouteLayer);
+      L.polyline(points,{color:'red',weight:3,opacity:0.8}).addTo(remainingRouteLayer);
       let remainingPoints=navRouteCoords.slice(nearestIndex);
-      L.polyline(remainingPoints,{color:'red',weight:3,opacity:0.9}).addTo(remainingRouteLayer);
+      L.polyline(remainingPoints,{color:'red',weight:3,opacity:0.8}).addTo(remainingRouteLayer);
     
-      let yellowLineCoords=[[userCoords[0],userCoords[1]]];
+      // Расчет синей навигационной стрелы на ближайшие 200 м
+      let arrowCoords=[[userCoords[0],userCoords[1]]];
       let distAccum = 0;
       for(let i=nearestIndex; i<navRouteCoords.length-1; i++){
         const from = L.latLng(navRouteCoords[i]);
@@ -700,23 +713,41 @@ function startRealNavigation(){
           const ratio = remaining/segDist;
           const lat = from.lat + (to.lat - from.lat) * ratio;
           const lng = from.lng + (to.lng - from.lng) * ratio;
-          yellowLineCoords.push([lat,lng]);
+          arrowCoords.push([lat,lng]);
           break;
         } else {
-          yellowLineCoords.push([to.lat,to.lng]);
+          arrowCoords.push([to.lat,to.lng]);
           distAccum += segDist;
         }
       }
-      L.polyline(yellowLineCoords,{color:'yellow',weight:4,opacity:0.9}).addTo(remainingRouteLayer);
+
+      if(arrowCoords.length >= 2){
+        // Белая контрастная подложка
+        L.polyline(arrowCoords, { className: 'nav-arrow-casing', interactive: false }).addTo(remainingRouteLayer);
+        // Синее тело стрелы
+        L.polyline(arrowCoords, { className: 'nav-arrow-main', interactive: false }).addTo(remainingRouteLayer);
+
+        // Наконечник стрелки на конце
+        const headCoord = arrowCoords[arrowCoords.length - 1];
+        const prevCoord = arrowCoords[arrowCoords.length - 2];
+        const headAngle = (Math.atan2(headCoord[1] - prevCoord[1], headCoord[0] - prevCoord[0]) * 180 / Math.PI) - 90;
+
+        const arrowHeadIcon = L.divIcon({
+          className: '',
+          html: `<div class="nav-heading-arrow" style="transform: rotate(${headAngle}deg);"></div>`,
+          iconSize: [18, 18],
+          iconAnchor: [9, 9]
+        });
+
+        L.marker(headCoord, { icon: arrowHeadIcon, interactive: false }).addTo(remainingRouteLayer);
+      }
     }
 
   }, err=>alert('Ошибка GPS'), {enableHighAccuracy:true, maximumAge:0, timeout:5000});
 }
 
 function stopRealNavigation(){ 
-  // Снятие подсветки с кнопки Старт Нав
   document.getElementById('navStartBtn').classList.remove('active');
-  
   if(navWatchId){ navigator.geolocation.clearWatch(navWatchId); navWatchId=null; } 
   if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); } 
 }
