@@ -131,14 +131,15 @@ textarea{resize:none;font-size:13px;}
   <button id="locBtn">GPS</button>
   <button id="refreshBtn">Обновить</button>
   <button id="clearBtn">Очистить</button>
-  <button id="downloadBtn">Сохранить CSV</button>
+  
+  <!-- Переставленные кнопки -->
   <button id="navStartBtn">Старт Нав</button>
   <button id="navStopBtn">Стоп Нав</button>
-
-  <!-- Блок управления трекером -->
-  <button id="trackStartBtn" title="Начать запись пути">● Запись</button>
+  <button id="trackStartBtn" title="Начать запись пути">● Запись трека</button>
   <button id="trackStopBtn" title="Остановить запись">■ Стоп трек</button>
+  <button id="downloadBtn">Сохранить CSV</button>
   <button id="trackSaveBtn" title="Скачать записанный трек">💾 Трек</button>
+  
   <div id="rec-indicator"><div id="rec-dot" class="blink"></div>REC</div>
 </div>
 
@@ -167,7 +168,7 @@ textarea{resize:none;font-size:13px;}
   </button>
 </div>
 
-<div id="version-label">версия 3.2 (с трекером)</div>
+<div id="version-label">версия 3.3 (с трекером)</div>
 
 <script>
 const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
@@ -179,7 +180,7 @@ L.control.zoom({position:'bottomleft'}).addTo(map);
 let csvMarkersLayer = L.layerGroup().addTo(map);
 let routeLayer = L.layerGroup().addTo(map);
 let remainingRouteLayer = L.layerGroup().addTo(map);
-let recordedTrackLayer = L.layerGroup().addTo(map); // Слой записанного пути
+let recordedTrackLayer = L.layerGroup().addTo(map);
 let polygonLayer = L.layerGroup().addTo(map);
 
 // Слои GeoJSON точек (НЕ добавляются на карту по умолчанию)
@@ -368,19 +369,17 @@ function recordTrackPoint(){
   if(!isTracking || !lastFix) return;
   const {lat, lon, speed, time} = lastFix;
 
-  // Игнорируем координаты, если стоим на месте (скорость < 0.5 м/с)
   if(speed < 0.5 && lastTrackPos) return;
 
   if(lastTrackPos){
     const d = haversineDist(lastTrackPos, [lat, lon]);
-    if(d < 5) return; // Фильтр шума GPS (дистанция меньше 5м не пишется)
+    if(d < 5) return;
     trackDistance += d;
   }
 
   lastTrackPos = [lat, lon];
   recordedTrack.push({lat, lon, time, speed, dist: trackDistance});
 
-  // Обновление линии трека на карте
   if(!trackPolyline){
     trackPolyline = L.polyline([[lat, lon]], {color: '#d90429', weight: 4, opacity: 0.85}).addTo(recordedTrackLayer);
   } else {
@@ -624,7 +623,11 @@ document.getElementById('csvFile').addEventListener('change', function(ev){
 
 document.getElementById('downloadBtn').addEventListener('click', ()=>{
   if(!csvData.length){ alert('Нет данных'); return; }
-  const csv=Papa.unparse(csvData);
+  const cleanData = csvData.map(point => {
+    const { marker, ...rest } = point;
+    return rest;
+  });
+  const csv=Papa.unparse(cleanData);
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
   const url=URL.createObjectURL(blob); 
   const link=document.createElement('a'); 
@@ -651,6 +654,13 @@ document.getElementById('clearBtn').addEventListener('click',()=>{
   infoDurationEl.textContent='Время: —';
   trackDistEl.textContent='0.00';
   trackTimeEl.textContent='0:00';
+  
+  // Сброс активных состояний кнопок
+  document.getElementById('navStartBtn').classList.remove('active');
+  document.getElementById('trackStartBtn').classList.remove('active');
+  recIndicatorEl.style.display = 'none';
+  if(isTracking){ isTracking = false; clearInterval(trackRecordInterval); stopTrackTimer(); }
+  stopRealNavigation();
 });
 document.getElementById('centerUserBtn').addEventListener('click',()=>{ if(userCoords){ autoFollow=true; centerOnUser(17); } });
 
@@ -658,6 +668,10 @@ document.getElementById('centerUserBtn').addEventListener('click',()=>{ if(userC
 function startRealNavigation(){
   if(!navRouteCoords.length){ alert('Нет маршрута для навигации'); return; }
   if(!navigator.geolocation){ alert('Геолокация не поддерживается'); return; }
+  
+  // Подсветка кнопки Старт Нав
+  document.getElementById('navStartBtn').classList.add('active');
+
   if(navWatchId) navigator.geolocation.clearWatch(navWatchId);
   navWatchId = navigator.geolocation.watchPosition(pos=>{
     updateUserPosition(pos);
@@ -700,6 +714,9 @@ function startRealNavigation(){
 }
 
 function stopRealNavigation(){ 
+  // Снятие подсветки с кнопки Старт Нав
+  document.getElementById('navStartBtn').classList.remove('active');
+  
   if(navWatchId){ navigator.geolocation.clearWatch(navWatchId); navWatchId=null; } 
   if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); } 
 }
