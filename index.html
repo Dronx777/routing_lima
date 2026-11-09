@@ -14,7 +14,7 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
 /* Скрываем атрибуцию Leaflet */
 .leaflet-control-attribution { display: none !important; }
 
-/* Исходный вид верхней панели */
+/* Панель управления сверху */
 #file-input{position:absolute;z-index:1200;left:50%;transform:translateX(-50%);top:10px;background:#fff;padding:6px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.15);display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;max-width:96%;}
 #file-input input[type=file]{font-size:13px;}
 #file-input button{font-size:13px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer;}
@@ -81,7 +81,7 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   pointer-events:none;
 }
 
-/* Надпись версии */
+/* Версия */
 #version-label{
   position:absolute;
   bottom:5px;
@@ -92,7 +92,7 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   text-shadow:0 0 3px rgba(255,255,255,0.8);
 }
 
-/* Кнопки масштаба (+/-) подняты НАД версией */
+/* Кнопки масштаба */
 .leaflet-left .leaflet-control-zoom {
   margin-bottom: 55px !important;
   margin-left: 10px !important;
@@ -100,7 +100,7 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   border: none !important;
 }
 
-/* Контейнер справа для Слоев и Центрирования */
+/* Блок справа */
 .controls-right-stack {
   position: absolute;
   bottom: 20px;
@@ -191,7 +191,7 @@ textarea{resize:none;font-size:13px;}
   </button>
 </div>
 
-<div id="version-label">версия 3.4 (навигационная стрела)</div>
+<div id="version-label">версия 3.5</div>
 
 <script>
 const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
@@ -456,7 +456,7 @@ document.getElementById('trackSaveBtn').addEventListener('click', ()=>{
   a.click();
 });
 
-// ================= Build OSRM Route =================
+// ================= Построение маршрута OSRM =================
 function buildOptimizedRoute(){
   routeLayer.clearLayers();
   activeRouteCoords = csvData.filter(p => String(p.status) === "0").map(p => [Number(p.lat), Number(p.lon)]);
@@ -479,8 +479,21 @@ function buildOptimizedRoute(){
       if(!json.trips || !json.trips.length){ alert('OSRM не смог построить маршрут'); return; }
       const trip = json.trips[0];
       routeLayer.clearLayers();
+
+      // Прокладываем основной маршрут OSRM
       L.geoJSON(trip.geometry,{style:{color:'#0077cc',weight:3,opacity:0.9}}).addTo(routeLayer);
       navRouteCoords = trip.geometry.coordinates.map(c => [c[1],c[0]]);
+
+      // Если пользователь не на самой дороге, показываем пунктирный "воздушный" отрезок до старта маршрута
+      if (userCoords && navRouteCoords.length > 0) {
+        L.polyline([[userCoords[0], userCoords[1]], navRouteCoords[0]], {
+          color: '#0077cc',
+          weight: 2.5,
+          opacity: 0.8,
+          dashArray: '5, 8'
+        }).addTo(routeLayer);
+      }
+
       const distanceKm = (trip.distance/1000).toFixed(2);
       infoDistanceEl.textContent = `Длина: ${distanceKm} км`;
       const totalMinutes = Math.round(trip.duration/60);
@@ -686,52 +699,116 @@ function startRealNavigation(){
   navWatchId = navigator.geolocation.watchPosition(pos=>{
     updateUserPosition(pos);
 
-    if(navRouteCoords.length>0 && userCoords){
-      let nearestIndex=0, minDist=Infinity;
-      for(let i=0;i<navRouteCoords.length;i++){
-        const dx=userCoords[0]-navRouteCoords[i][0], dy=userCoords[1]-navRouteCoords[i][1];
-        const dist=Math.sqrt(dx*dx+dy*dy);
-        if(dist<minDist){ minDist=dist; nearestIndex=i; }
+    if(navRouteCoords.length > 0 && userCoords){
+      // Находим ближайшую точку маршрута на дорожном графе
+      let nearestIndex = 0, minDist = Infinity;
+      for(let i = 0; i < navRouteCoords.length; i++){
+        const dx = userCoords[0] - navRouteCoords[i][0];
+        const dy = userCoords[1] - navRouteCoords[i][1];
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if(dist < minDist){ minDist = dist; nearestIndex = i; }
       }
       remainingRouteLayer.clearLayers();
 
-      // Оставшийся маршрут тонкой линией
-      let points=[[userCoords[0],userCoords[1]], navRouteCoords[nearestIndex]];
-      L.polyline(points,{color:'red',weight:3,opacity:0.8}).addTo(remainingRouteLayer);
-      let remainingPoints=navRouteCoords.slice(nearestIndex);
-      L.polyline(remainingPoints,{color:'red',weight:3,opacity:0.8}).addTo(remainingRouteLayer);
-    
-      // Расчет синей навигационной стрелы на ближайшие 200 м
-      let arrowCoords=[[userCoords[0],userCoords[1]]];
-      let distAccum = 0;
-      for(let i=nearestIndex; i<navRouteCoords.length-1; i++){
-        const from = L.latLng(navRouteCoords[i]);
-        const to = L.latLng(navRouteCoords[i+1]);
-        const segDist = from.distanceTo(to);
-        if(distAccum + segDist > 200){
-          const remaining = 200 - distAccum;
-          const ratio = remaining/segDist;
-          const lat = from.lat + (to.lat - from.lat) * ratio;
-          const lng = from.lng + (to.lng - from.lng) * ratio;
-          arrowCoords.push([lat,lng]);
-          break;
-        } else {
-          arrowCoords.push([to.lat,to.lng]);
-          distAccum += segDist;
+      const entryPoint = navRouteCoords[nearestIndex];
+
+      // 1. Отрезок "до дороги" (воздушная линия) — ПУНКТИРНЫЙ КРАСНЫЙ
+      L.polyline([[userCoords[0], userCoords[1]], entryPoint], {
+        color: 'red',
+        weight: 3,
+        opacity: 0.85,
+        dashArray: '6, 8'
+      }).addTo(remainingRouteLayer);
+
+      // 2. Оставшийся маршрут по дорогам — СПЛОШНОЙ КРАСНЫЙ
+      let remainingRoadPoints = navRouteCoords.slice(nearestIndex);
+      L.polyline(remainingRoadPoints, {
+        color: 'red',
+        weight: 3,
+        opacity: 0.85
+      }).addTo(remainingRouteLayer);
+
+      // ================= ПОСТРОЕНИЕ СИНЕЙ СТРЕЛКИ НА 200 М =================
+      const airDist = L.latLng(userCoords).distanceTo(L.latLng(entryPoint));
+
+      if (airDist >= 200) {
+        // Дорога дальше 200 метров: вся стрелка — это пунктирный луч к дороге
+        const from = L.latLng(userCoords);
+        const to = L.latLng(entryPoint);
+        const ratio = 200 / airDist;
+        const target = [
+          from.lat + (to.lat - from.lat) * ratio,
+          from.lng + (to.lng - from.lng) * ratio
+        ];
+
+        L.polyline([[userCoords[0], userCoords[1]], target], {
+          className: 'nav-arrow-casing',
+          dashArray: '8, 8',
+          interactive: false
+        }).addTo(remainingRouteLayer);
+
+        L.polyline([[userCoords[0], userCoords[1]], target], {
+          className: 'nav-arrow-main',
+          dashArray: '8, 8',
+          interactive: false
+        }).addTo(remainingRouteLayer);
+
+        const headAngle = (Math.atan2(target[1] - userCoords[1], target[0] - userCoords[0]) * 180 / Math.PI) - 90;
+        const arrowHeadIcon = L.divIcon({
+          className: '',
+          html: `<div class="nav-heading-arrow" style="transform: rotate(${headAngle}deg);"></div>`,
+          iconSize: [18, 18],
+          iconAnchor: [9, 9]
+        });
+        L.marker(target, { icon: arrowHeadIcon, interactive: false }).addTo(remainingRouteLayer);
+
+      } else {
+        // 1. Отрезок стрелки до дороги: ПУНКТИРНАЯ СИНЯЯ СТРЕЛКА
+        L.polyline([[userCoords[0], userCoords[1]], entryPoint], {
+          className: 'nav-arrow-casing',
+          dashArray: '8, 8',
+          interactive: false
+        }).addTo(remainingRouteLayer);
+
+        L.polyline([[userCoords[0], userCoords[1]], entryPoint], {
+          className: 'nav-arrow-main',
+          dashArray: '8, 8',
+          interactive: false
+        }).addTo(remainingRouteLayer);
+
+        // 2. Отрезок стрелки по дороге: СПЛОШНАЯ СИНЯЯ СТРЕЛКА
+        let roadArrowCoords = [entryPoint];
+        let distAccum = airDist;
+
+        for(let i = nearestIndex; i < navRouteCoords.length - 1; i++){
+          const from = L.latLng(navRouteCoords[i]);
+          const to = L.latLng(navRouteCoords[i+1]);
+          const segDist = from.distanceTo(to);
+
+          if(distAccum + segDist > 200){
+            const remaining = 200 - distAccum;
+            const ratio = remaining / segDist;
+            const lat = from.lat + (to.lat - from.lat) * ratio;
+            const lng = from.lng + (to.lng - from.lng) * ratio;
+            roadArrowCoords.push([lat, lng]);
+            break;
+          } else {
+            roadArrowCoords.push([to.lat, to.lng]);
+            distAccum += segDist;
+          }
         }
-      }
 
-      if(arrowCoords.length >= 2){
-        // Белая контрастная подложка
-        L.polyline(arrowCoords, { className: 'nav-arrow-casing', interactive: false }).addTo(remainingRouteLayer);
-        // Синее тело стрелы
-        L.polyline(arrowCoords, { className: 'nav-arrow-main', interactive: false }).addTo(remainingRouteLayer);
+        if (roadArrowCoords.length >= 2) {
+          L.polyline(roadArrowCoords, { className: 'nav-arrow-casing', interactive: false }).addTo(remainingRouteLayer);
+          L.polyline(roadArrowCoords, { className: 'nav-arrow-main', interactive: false }).addTo(remainingRouteLayer);
+        }
 
-        // Наконечник стрелки на конце
-        const headCoord = arrowCoords[arrowCoords.length - 1];
-        const prevCoord = arrowCoords[arrowCoords.length - 2];
-        const headAngle = (Math.atan2(headCoord[1] - prevCoord[1], headCoord[0] - prevCoord[0]) * 180 / Math.PI) - 90;
+        // Наконечник стрелки на конце 200-метрового отрезка
+        const lastPts = roadArrowCoords.length >= 2 
+          ? [roadArrowCoords[roadArrowCoords.length - 2], roadArrowCoords[roadArrowCoords.length - 1]]
+          : [[userCoords[0], userCoords[1]], entryPoint];
 
+        const headAngle = (Math.atan2(lastPts[1][1] - lastPts[0][1], lastPts[1][0] - lastPts[0][0]) * 180 / Math.PI) - 90;
         const arrowHeadIcon = L.divIcon({
           className: '',
           html: `<div class="nav-heading-arrow" style="transform: rotate(${headAngle}deg);"></div>`,
@@ -739,7 +816,7 @@ function startRealNavigation(){
           iconAnchor: [9, 9]
         });
 
-        L.marker(headCoord, { icon: arrowHeadIcon, interactive: false }).addTo(remainingRouteLayer);
+        L.marker(lastPts[1], { icon: arrowHeadIcon, interactive: false }).addTo(remainingRouteLayer);
       }
     }
 
