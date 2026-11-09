@@ -55,13 +55,21 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   stroke-linejoin: round !important;
   opacity: 1;
 }
+
+/* Идеально центрированный SVG-наконечник */
 .nav-heading-arrow {
-  width: 0;
-  height: 0;
-  border-left: 9px solid transparent;
-  border-right: 9px solid transparent;
-  border-bottom: 18px solid #0077ff;
+  width: 22px;
+  height: 22px;
+  transform-origin: center center;
   filter: drop-shadow(0 0 2px #ffffff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-heading-arrow svg {
+  width: 100%;
+  height: 100%;
+  fill: #0077ff;
 }
 
 /* Инфо-бокс снизу по центру */
@@ -191,7 +199,7 @@ textarea{resize:none;font-size:13px;}
   </button>
 </div>
 
-<div id="version-label">версия 3.5</div>
+<div id="version-label">версия 3.6 (точный угол)</div>
 
 <script>
 const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
@@ -327,6 +335,15 @@ function haversineDist(a, b){
   const lat2 = b[0] * Math.PI / 180;
   const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
   return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Расчет угла сегмента в экранных пикселях карты
+function getPixelBearing(p1, p2) {
+  const pt1 = map.latLngToLayerPoint(L.latLng(p1));
+  const pt2 = map.latLngToLayerPoint(L.latLng(p2));
+  const dx = pt2.x - pt1.x;
+  const dy = pt2.y - pt1.y;
+  return (Math.atan2(dy, dx) * 180 / Math.PI) + 90;
 }
 
 function checkPointsInUserRadius(){
@@ -480,11 +497,9 @@ function buildOptimizedRoute(){
       const trip = json.trips[0];
       routeLayer.clearLayers();
 
-      // Прокладываем основной маршрут OSRM
       L.geoJSON(trip.geometry,{style:{color:'#0077cc',weight:3,opacity:0.9}}).addTo(routeLayer);
       navRouteCoords = trip.geometry.coordinates.map(c => [c[1],c[0]]);
 
-      // Если пользователь не на самой дороге, показываем пунктирный "воздушный" отрезок до старта маршрута
       if (userCoords && navRouteCoords.length > 0) {
         L.polyline([[userCoords[0], userCoords[1]], navRouteCoords[0]], {
           color: '#0077cc',
@@ -700,7 +715,6 @@ function startRealNavigation(){
     updateUserPosition(pos);
 
     if(navRouteCoords.length > 0 && userCoords){
-      // Находим ближайшую точку маршрута на дорожном графе
       let nearestIndex = 0, minDist = Infinity;
       for(let i = 0; i < navRouteCoords.length; i++){
         const dx = userCoords[0] - navRouteCoords[i][0];
@@ -712,7 +726,7 @@ function startRealNavigation(){
 
       const entryPoint = navRouteCoords[nearestIndex];
 
-      // 1. Отрезок "до дороги" (воздушная линия) — ПУНКТИРНЫЙ КРАСНЫЙ
+      // 1. Отрезок "до дороги" (пунктирный красный)
       L.polyline([[userCoords[0], userCoords[1]], entryPoint], {
         color: 'red',
         weight: 3,
@@ -720,7 +734,7 @@ function startRealNavigation(){
         dashArray: '6, 8'
       }).addTo(remainingRouteLayer);
 
-      // 2. Оставшийся маршрут по дорогам — СПЛОШНОЙ КРАСНЫЙ
+      // 2. Оставшийся маршрут по дорогам (сплошной красный)
       let remainingRoadPoints = navRouteCoords.slice(nearestIndex);
       L.polyline(remainingRoadPoints, {
         color: 'red',
@@ -732,7 +746,7 @@ function startRealNavigation(){
       const airDist = L.latLng(userCoords).distanceTo(L.latLng(entryPoint));
 
       if (airDist >= 200) {
-        // Дорога дальше 200 метров: вся стрелка — это пунктирный луч к дороге
+        // Дорога дальше 200м: пунктирная стрелка к дороге
         const from = L.latLng(userCoords);
         const to = L.latLng(entryPoint);
         const ratio = 200 / airDist;
@@ -753,17 +767,18 @@ function startRealNavigation(){
           interactive: false
         }).addTo(remainingRouteLayer);
 
-        const headAngle = (Math.atan2(target[1] - userCoords[1], target[0] - userCoords[0]) * 180 / Math.PI) - 90;
+        // Расчет угла через пиксельные координаты экрана
+        const headAngle = getPixelBearing(userCoords, target);
         const arrowHeadIcon = L.divIcon({
           className: '',
-          html: `<div class="nav-heading-arrow" style="transform: rotate(${headAngle}deg);"></div>`,
-          iconSize: [18, 18],
-          iconAnchor: [9, 9]
+          html: `<div class="nav-heading-arrow" style="transform: rotate(${headAngle}deg);"><svg viewBox="0 0 24 24"><polygon points="12,2 22,22 12,17 2,22"/></svg></div>`,
+          iconSize: [22, 22],
+          iconAnchor: [11, 11]
         });
         L.marker(target, { icon: arrowHeadIcon, interactive: false }).addTo(remainingRouteLayer);
 
       } else {
-        // 1. Отрезок стрелки до дороги: ПУНКТИРНАЯ СИНЯЯ СТРЕЛКА
+        // 1. Отрезок стрелки до дороги (пунктирный)
         L.polyline([[userCoords[0], userCoords[1]], entryPoint], {
           className: 'nav-arrow-casing',
           dashArray: '8, 8',
@@ -776,7 +791,7 @@ function startRealNavigation(){
           interactive: false
         }).addTo(remainingRouteLayer);
 
-        // 2. Отрезок стрелки по дороге: СПЛОШНАЯ СИНЯЯ СТРЕЛКА
+        // 2. Отрезок стрелки по дороге (сплошной)
         let roadArrowCoords = [entryPoint];
         let distAccum = airDist;
 
@@ -803,17 +818,19 @@ function startRealNavigation(){
           L.polyline(roadArrowCoords, { className: 'nav-arrow-main', interactive: false }).addTo(remainingRouteLayer);
         }
 
-        // Наконечник стрелки на конце 200-метрового отрезка
+        // Берем ровно 2 последние точки, по которым физически идет наконечник
         const lastPts = roadArrowCoords.length >= 2 
           ? [roadArrowCoords[roadArrowCoords.length - 2], roadArrowCoords[roadArrowCoords.length - 1]]
           : [[userCoords[0], userCoords[1]], entryPoint];
 
-        const headAngle = (Math.atan2(lastPts[1][1] - lastPts[0][1], lastPts[1][0] - lastPts[0][0]) * 180 / Math.PI) - 90;
+        // Точный угол по экранной проекции
+        const headAngle = getPixelBearing(lastPts[0], lastPts[1]);
+
         const arrowHeadIcon = L.divIcon({
           className: '',
-          html: `<div class="nav-heading-arrow" style="transform: rotate(${headAngle}deg);"></div>`,
-          iconSize: [18, 18],
-          iconAnchor: [9, 9]
+          html: `<div class="nav-heading-arrow" style="transform: rotate(${headAngle}deg);"><svg viewBox="0 0 24 24"><polygon points="12,2 22,22 12,17 2,22"/></svg></div>`,
+          iconSize: [22, 22],
+          iconAnchor: [11, 11]
         });
 
         L.marker(lastPts[1], { icon: arrowHeadIcon, interactive: false }).addTo(remainingRouteLayer);
