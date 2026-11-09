@@ -655,7 +655,7 @@ document.getElementById('csvFile').addEventListener('change', function(ev){
           interactive:false
         }).addTo(csvMarkersLayer);
       }
-      marker.bindPopup(createPopup(csvData[i],marker,i),{minWidth:160});
+      marker.bindPopup(() => createPopup(csvData[i], marker, i), {minWidth: 160});
     });
     buildOptimizedRoute();
   }});
