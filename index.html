@@ -11,17 +11,14 @@
 html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;-webkit-tap-highlight-color:transparent;}
 #map{height:100vh;width:100vw;}
 
-/* Скрываем атрибуцию Leaflet */
 .leaflet-control-attribution { display: none !important; }
 
-/* Панель управления сверху */
 #file-input{position:absolute;z-index:1200;left:50%;transform:translateX(-50%);top:10px;background:#fff;padding:6px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.15);display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;max-width:96%;}
 #file-input input[type=file]{font-size:13px;}
 #file-input button{font-size:13px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer;}
 #file-input button:active{background:#eee;}
 #file-input button.active{background:#0077cc;color:#fff;border-color:#0077cc;}
 
-/* Индикатор записи трека */
 #rec-indicator {
   display:none;
   align-items:center;
@@ -40,7 +37,6 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
 .blink { animation: blink 1s infinite; }
 @keyframes blink { 0%{opacity:1} 50%{opacity:0} 100%{opacity:1} }
 
-/* Навигационная синяя стрелка */
 .nav-arrow-casing {
   stroke: #ffffff !important;
   stroke-width: 9 !important;
@@ -56,7 +52,6 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   opacity: 1;
 }
 
-/* Идеально центрированный SVG-наконечник */
 .nav-heading-arrow {
   width: 22px;
   height: 22px;
@@ -72,7 +67,6 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   fill: #0077ff;
 }
 
-/* Инфо-бокс снизу по центру */
 #info-box{
   position:absolute;
   bottom:10px;
@@ -89,7 +83,6 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   pointer-events:none;
 }
 
-/* Версия */
 #version-label{
   position:absolute;
   bottom:5px;
@@ -100,7 +93,6 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   text-shadow:0 0 3px rgba(255,255,255,0.8);
 }
 
-/* Кнопки масштаба */
 .leaflet-left .leaflet-control-zoom {
   margin-bottom: 55px !important;
   margin-left: 10px !important;
@@ -108,7 +100,6 @@ html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Seg
   border: none !important;
 }
 
-/* Блок справа */
 .controls-right-stack {
   position: absolute;
   bottom: 20px;
@@ -199,7 +190,7 @@ textarea{resize:none;font-size:13px;}
   </button>
 </div>
 
-<div id="version-label">версия 3.8 (порог 10м)</div>
+<div id="version-label">версия 3.9 (проекция на дорогу)</div>
 
 <script>
 const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
@@ -233,7 +224,6 @@ layerControl.addTo(map);
 const stackEl = document.getElementById('rightStack');
 stackEl.insertBefore(layerControl.getContainer(), document.getElementById('centerUserBtn'));
 
-// ===== РЕНДЕР И АВТОЗАГРУЗКА hex.geojson =====
 function renderGeoJson(geoData) {
   polygonLayer.clearLayers();
   const poly = L.geoJSON(geoData, {
@@ -266,7 +256,6 @@ fetch('hex.geojson')
   .then(data => renderGeoJson(data))
   .catch(err => console.warn('Автозагрузка hex.geojson недоступна:', err));
 
-// ===== GEOJSON СЛОИ =====
 function renderColoredPoints(geoData, layer, color, fillColor) {
   layer.clearLayers();
   L.geoJSON(geoData, {
@@ -294,7 +283,6 @@ fetch('1_part.geojson').then(r=>r.ok?r.json():null).then(d=>{if(d) renderColored
 fetch('2_part.geojson').then(r=>r.ok?r.json():null).then(d=>{if(d) renderColoredPoints(d, pointsPart2Layer, '#c7511f', '#fd7e14');}).catch(()=>{});
 fetch('3_part.geojson').then(r=>r.ok?r.json():null).then(d=>{if(d) renderColoredPoints(d, pointsPart3Layer, '#0077cc', '#17a2b8');}).catch(()=>{});
 
-// ================= ПЕРЕМЕННЫЕ =================
 let userMarker = null;
 let autoFollow = true;
 let csvData = [];
@@ -337,7 +325,6 @@ function haversineDist(a, b){
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-// Расчет угла сегмента в экранных пикселях карты
 function getPixelBearing(p1, p2) {
   const pt1 = map.latLngToLayerPoint(L.latLng(p1));
   const pt2 = map.latLngToLayerPoint(L.latLng(p2));
@@ -346,7 +333,56 @@ function getPixelBearing(p1, p2) {
   return (Math.atan2(dy, dx) * 180 / Math.PI) + 90;
 }
 
-// Обновление статуса в памяти и перекраска (БЕЗ сброса маршрута)
+// Проекция точки P на отрезок [A, B]
+function projectPointOnSegment(p, a, b) {
+  const pLat = p[0], pLng = p[1];
+  const aLat = a[0], aLng = a[1];
+  const bLat = b[0], bLng = b[1];
+
+  const cosLat = Math.cos(pLat * Math.PI / 180);
+  const px = pLng * cosLat, py = pLat;
+  const ax = aLng * cosLat, ay = aLat;
+  const bx = bLng * cosLat, by = bLat;
+
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+
+  if (lenSq === 0) return { point: a, t: 0 };
+
+  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+
+  return {
+    point: [aLat + (bLat - aLat) * t, aLng + (bLng - aLng) * t],
+    t: t
+  };
+}
+
+// Поиск ближайшей проекции на всем протяжении полилинии
+function findNearestRoadProjection(userPt, polyCoords) {
+  let minDistance = Infinity;
+  let bestProj = null;
+  let segIndex = 0;
+
+  for (let i = 0; i < polyCoords.length - 1; i++) {
+    const proj = projectPointOnSegment(userPt, polyCoords[i], polyCoords[i + 1]);
+    const dist = haversineDist(userPt, proj.point);
+
+    if (dist < minDistance) {
+      minDistance = dist;
+      bestProj = proj.point;
+      segIndex = i;
+    }
+  }
+
+  return {
+    point: bestProj || polyCoords[0],
+    segIndex: segIndex,
+    distance: minDistance
+  };
+}
+
 function checkPointsInUserRadius(){
   if(!userCoords) return;
 
@@ -354,7 +390,7 @@ function checkPointsInUserRadius(){
     if(p.status === "0"){
       const d = L.latLng(userCoords).distanceTo([p.lat, p.lon]);
       if(d <= 50){
-        p.status = "1"; // Физически переводим статус в "1", чтобы в попапе подсвечивалось "Выполнено"
+        p.status = "1";
         if(p.marker){
           p.marker.setStyle({ color: 'green', fillColor: 'green' });
         }
@@ -393,7 +429,7 @@ function requestUserLocation(){
   navigator.geolocation.getCurrentPosition(updateUserPosition, err=>alert('GPS недоступен'), {enableHighAccuracy:true}); 
 }
 
-// ================= ЛОГИКА ТРЕКЕРА =================
+// ================= ТРЕКЕР =================
 function recordTrackPoint(){
   if(!isTracking || !lastFix) return;
   const {lat, lon, speed, time} = lastFix;
@@ -468,7 +504,7 @@ document.getElementById('trackSaveBtn').addEventListener('click', ()=>{
   a.click();
 });
 
-// ================= Построение маршрута OSRM =================
+// ================= OSRM МАРШРУТ =================
 function buildOptimizedRoute(){
   routeLayer.clearLayers();
   activeRouteCoords = csvData.filter(p => String(p.status) === "0").map(p => [Number(p.lat), Number(p.lon)]);
@@ -497,7 +533,7 @@ function buildOptimizedRoute(){
 
       if (userCoords && navRouteCoords.length > 0) {
         const airStartDist = L.latLng(userCoords).distanceTo(L.latLng(navRouteCoords[0]));
-        if (airStartDist > 10) {
+        if (airStartDist > 20) {
           L.polyline([[userCoords[0], userCoords[1]], navRouteCoords[0]], {
             color: '#0077cc',
             weight: 2.5,
@@ -516,7 +552,7 @@ function buildOptimizedRoute(){
     .catch(err=>{ alert('Ошибка OSRM'); console.error(err); });
 }
 
-// ================= POPUP =================
+// ================= ПОПАП КАРТОЧКИ =================
 function createPopup(point, marker, index){
   const container=document.createElement('div');
   container.style.display='flex'; container.style.flexDirection='column'; container.style.gap='4px';
@@ -625,7 +661,7 @@ function createPopup(point, marker, index){
   return container;
 }
 
-// ================= EVENTS =================
+// ================= СОБЫТИЯ =================
 document.getElementById('csvFile').addEventListener('change', function(ev){
   const file=ev.target.files[0]; if(!file) return; csvFileName=file.name;
   Papa.parse(file,{header:true,dynamicTyping:false,skipEmptyLines:true,complete:function(results){
@@ -659,7 +695,6 @@ document.getElementById('csvFile').addEventListener('change', function(ev){
           interactive:false
         }).addTo(csvMarkersLayer);
       }
-      // Динамический рендер содержимого при каждом открытии попапа
       marker.bindPopup(() => createPopup(csvData[i], marker, i), {minWidth: 160});
     });
     buildOptimizedRoute();
@@ -719,128 +754,92 @@ function startRealNavigation(){
   navWatchId = navigator.geolocation.watchPosition(pos=>{
     updateUserPosition(pos);
 
-    if(navRouteCoords.length > 0 && userCoords){
-      let nearestIndex = 0, minDist = Infinity;
-      for(let i = 0; i < navRouteCoords.length; i++){
-        const dx = userCoords[0] - navRouteCoords[i][0];
-        const dy = userCoords[1] - navRouteCoords[i][1];
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        if(dist < minDist){ minDist = dist; nearestIndex = i; }
-      }
+    if(navRouteCoords.length > 1 && userCoords){
       remainingRouteLayer.clearLayers();
 
-      const entryPoint = navRouteCoords[nearestIndex];
-      const airDist = L.latLng(userCoords).distanceTo(L.latLng(entryPoint));
+      // Точная проекция геопозиции на ближайший сегмент дороги
+      const proj = findNearestRoadProjection(userCoords, navRouteCoords);
+      const roadPoint = proj.point;
+      const segIndex = proj.segIndex;
+      const distToRoad = proj.distance;
 
-      // ПОРОГ ПРИВЯЗКИ К ДОРОГЕ = 10 МЕТРОВ
-      const ON_ROAD_THRESHOLD = 10;
-      const isOffRoad = airDist > ON_ROAD_THRESHOLD;
+      // Порог дороги: 25 метров (учитывает ширину улицы, тротуар и дрейф GPS)
+      const isOffRoad = distToRoad > 25;
 
-      // 1. Отрезок "до дороги" (пунктирный красный только если дальше 10м)
+      // 1. Воздушный пунктир только при реальном удалении от дороги
       if (isOffRoad) {
-        L.polyline([[userCoords[0], userCoords[1]], entryPoint], {
+        L.polyline([[userCoords[0], userCoords[1]], roadPoint], {
           color: 'red',
           weight: 3,
           opacity: 0.85,
           dashArray: '6, 8'
         }).addTo(remainingRouteLayer);
-      } else {
-        L.polyline([[userCoords[0], userCoords[1]], entryPoint], {
-          color: 'red',
-          weight: 3,
-          opacity: 0.85
-        }).addTo(remainingRouteLayer);
       }
 
-      // 2. Оставшийся маршрут по дорогам (сплошной красный)
-      let remainingRoadPoints = navRouteCoords.slice(nearestIndex);
-      L.polyline(remainingRoadPoints, {
+      // 2. Оставшийся путь вперёд по дорожной сети от точки проекции
+      let remainingRoad = [roadPoint];
+      for (let i = segIndex + 1; i < navRouteCoords.length; i++) {
+        remainingRoad.push(navRouteCoords[i]);
+      }
+
+      L.polyline(remainingRoad, {
         color: 'red',
         weight: 3,
         opacity: 0.85
       }).addTo(remainingRouteLayer);
 
-      // ================= ПОСТРОЕНИЕ СИНЕЙ СТРЕЛКИ НА 200 М =================
-      let distAccum = isOffRoad ? airDist : 0;
+      // ================= СИНЯЯ СТРЕЛКА (ВПЕРЁД ПО МАРШРУТУ) =================
+      let arrowCoords = [];
+      let distAccum = 0;
 
-      if (isOffRoad && airDist >= 200) {
-        // Дорога дальше 200м: пунктирная стрелка к дороге
-        const from = L.latLng(userCoords);
-        const to = L.latLng(entryPoint);
-        const ratio = 200 / airDist;
-        const target = [
-          from.lat + (to.lat - from.lat) * ratio,
-          from.lng + (to.lng - from.lng) * ratio
-        ];
-
-        L.polyline([[userCoords[0], userCoords[1]], target], {
+      if (isOffRoad) {
+        // Пунктирный выход на дорогу
+        L.polyline([[userCoords[0], userCoords[1]], roadPoint], {
           className: 'nav-arrow-casing',
           dashArray: '8, 8',
           interactive: false
         }).addTo(remainingRouteLayer);
 
-        L.polyline([[userCoords[0], userCoords[1]], target], {
+        L.polyline([[userCoords[0], userCoords[1]], roadPoint], {
           className: 'nav-arrow-main',
           dashArray: '8, 8',
           interactive: false
         }).addTo(remainingRouteLayer);
 
-        const headAngle = getPixelBearing(userCoords, target);
-        const arrowHeadIcon = L.divIcon({
-          className: '',
-          html: `<div class="nav-heading-arrow" style="transform: rotate(${headAngle}deg);"><svg viewBox="0 0 24 24"><polygon points="12,2 22,22 12,17 2,22"/></svg></div>`,
-          iconSize: [22, 22],
-          iconAnchor: [11, 11]
-        });
-        L.marker(target, { icon: arrowHeadIcon, interactive: false }).addTo(remainingRouteLayer);
-
+        arrowCoords.push(roadPoint);
+        distAccum = distToRoad;
       } else {
-        // Отрезок от пользователя до точки дороги (пунктирный только если реально в стороне > 10м)
-        if (isOffRoad) {
-          L.polyline([[userCoords[0], userCoords[1]], entryPoint], {
-            className: 'nav-arrow-casing',
-            dashArray: '8, 8',
-            interactive: false
-          }).addTo(remainingRouteLayer);
+        // Мы на улице: сплошное соединение
+        arrowCoords.push([userCoords[0], userCoords[1]]);
+        arrowCoords.push(roadPoint);
+      }
 
-          L.polyline([[userCoords[0], userCoords[1]], entryPoint], {
-            className: 'nav-arrow-main',
-            dashArray: '8, 8',
-            interactive: false
-          }).addTo(remainingRouteLayer);
+      // Набор 200 метров строго вперед по линии движения
+      for (let i = 0; i < remainingRoad.length - 1; i++) {
+        const from = L.latLng(remainingRoad[i]);
+        const to = L.latLng(remainingRoad[i + 1]);
+        const segDist = from.distanceTo(to);
+
+        if (distAccum + segDist > 200) {
+          const remaining = 200 - distAccum;
+          const ratio = remaining / segDist;
+          const lat = from.lat + (to.lat - from.lat) * ratio;
+          const lng = from.lng + (to.lng - from.lng) * ratio;
+          arrowCoords.push([lat, lng]);
+          break;
+        } else {
+          arrowCoords.push([to.lat, to.lng]);
+          distAccum += segDist;
         }
+      }
 
-        // Отрезок стрелки по дороге (сплошной)
-        let roadArrowCoords = isOffRoad ? [entryPoint] : [[userCoords[0], userCoords[1]], entryPoint];
+      // Отрисовка сплошной навигационной стрелы
+      if (arrowCoords.length >= 2) {
+        L.polyline(arrowCoords, { className: 'nav-arrow-casing', interactive: false }).addTo(remainingRouteLayer);
+        L.polyline(arrowCoords, { className: 'nav-arrow-main', interactive: false }).addTo(remainingRouteLayer);
 
-        for(let i = nearestIndex; i < navRouteCoords.length - 1; i++){
-          const from = L.latLng(navRouteCoords[i]);
-          const to = L.latLng(navRouteCoords[i+1]);
-          const segDist = from.distanceTo(to);
-
-          if(distAccum + segDist > 200){
-            const remaining = 200 - distAccum;
-            const ratio = remaining / segDist;
-            const lat = from.lat + (to.lat - from.lat) * ratio;
-            const lng = from.lng + (to.lng - from.lng) * ratio;
-            roadArrowCoords.push([lat, lng]);
-            break;
-          } else {
-            roadArrowCoords.push([to.lat, to.lng]);
-            distAccum += segDist;
-          }
-        }
-
-        if (roadArrowCoords.length >= 2) {
-          L.polyline(roadArrowCoords, { className: 'nav-arrow-casing', interactive: false }).addTo(remainingRouteLayer);
-          L.polyline(roadArrowCoords, { className: 'nav-arrow-main', interactive: false }).addTo(remainingRouteLayer);
-        }
-
-        // Берем 2 последние точки, определяющие угол наконечника
-        const lastPts = roadArrowCoords.length >= 2 
-          ? [roadArrowCoords[roadArrowCoords.length - 2], roadArrowCoords[roadArrowCoords.length - 1]]
-          : [[userCoords[0], userCoords[1]], entryPoint];
-
+        // Наконечник по направлению движения
+        const lastPts = [arrowCoords[arrowCoords.length - 2], arrowCoords[arrowCoords.length - 1]];
         const headAngle = getPixelBearing(lastPts[0], lastPts[1]);
 
         const arrowHeadIcon = L.divIcon({
