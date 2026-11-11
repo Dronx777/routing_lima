@@ -190,7 +190,7 @@ textarea{resize:none;font-size:13px;}
   </button>
 </div>
 
-<div id="version-label">версия 3.9 (проекция на дорогу)</div>
+<div id="version-label">версия 4.0 (сохранение зума)</div>
 
 <script>
 const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
@@ -202,7 +202,7 @@ let csvMarkersLayer = L.layerGroup().addTo(map);
 let routeLayer = L.layerGroup().addTo(map);
 let remainingRouteLayer = L.layerGroup().addTo(map);
 let recordedTrackLayer = L.layerGroup().addTo(map);
-let polygonLayer = L.layerGroup().addTo(map);
+let polygonLayer = L.layerGroup(); // По умолчанию выключен (без addTo(map))
 
 let pointsPartLayer = L.layerGroup();
 let pointsPart2Layer = L.layerGroup();
@@ -226,7 +226,7 @@ stackEl.insertBefore(layerControl.getContainer(), document.getElementById('cente
 
 function renderGeoJson(geoData) {
   polygonLayer.clearLayers();
-  const poly = L.geoJSON(geoData, {
+  L.geoJSON(geoData, {
     style: {
       color: '#000000',
       weight: 1.5,
@@ -242,10 +242,6 @@ function renderGeoJson(geoData) {
       }
     }
   }).addTo(polygonLayer);
-  
-  if (poly.getLayers().length > 0) {
-    map.fitBounds(poly.getBounds());
-  }
 }
 
 fetch('hex.geojson')
@@ -547,7 +543,7 @@ function buildOptimizedRoute(){
       infoDistanceEl.textContent = `Длина: ${distanceKm} км`;
       const totalMinutes = Math.round(trip.duration/60);
       infoDurationEl.textContent = totalMinutes<60?`${totalMinutes} мин`:`${Math.floor(totalMinutes/60)} ч ${totalMinutes%60} мин`;
-      if(userCoords) centerOnUser(15);
+      // Зум и положение карты не сбрасываются при пересчете
     })
     .catch(err=>{ alert('Ошибка OSRM'); console.error(err); });
 }
@@ -757,16 +753,13 @@ function startRealNavigation(){
     if(navRouteCoords.length > 1 && userCoords){
       remainingRouteLayer.clearLayers();
 
-      // Точная проекция геопозиции на ближайший сегмент дороги
       const proj = findNearestRoadProjection(userCoords, navRouteCoords);
       const roadPoint = proj.point;
       const segIndex = proj.segIndex;
       const distToRoad = proj.distance;
 
-      // Порог дороги: 25 метров (учитывает ширину улицы, тротуар и дрейф GPS)
       const isOffRoad = distToRoad > 25;
 
-      // 1. Воздушный пунктир только при реальном удалении от дороги
       if (isOffRoad) {
         L.polyline([[userCoords[0], userCoords[1]], roadPoint], {
           color: 'red',
@@ -776,7 +769,6 @@ function startRealNavigation(){
         }).addTo(remainingRouteLayer);
       }
 
-      // 2. Оставшийся путь вперёд по дорожной сети от точки проекции
       let remainingRoad = [roadPoint];
       for (let i = segIndex + 1; i < navRouteCoords.length; i++) {
         remainingRoad.push(navRouteCoords[i]);
@@ -788,12 +780,10 @@ function startRealNavigation(){
         opacity: 0.85
       }).addTo(remainingRouteLayer);
 
-      // ================= СИНЯЯ СТРЕЛКА (ВПЕРЁД ПО МАРШРУТУ) =================
       let arrowCoords = [];
       let distAccum = 0;
 
       if (isOffRoad) {
-        // Пунктирный выход на дорогу
         L.polyline([[userCoords[0], userCoords[1]], roadPoint], {
           className: 'nav-arrow-casing',
           dashArray: '8, 8',
@@ -809,12 +799,10 @@ function startRealNavigation(){
         arrowCoords.push(roadPoint);
         distAccum = distToRoad;
       } else {
-        // Мы на улице: сплошное соединение
         arrowCoords.push([userCoords[0], userCoords[1]]);
         arrowCoords.push(roadPoint);
       }
 
-      // Набор 200 метров строго вперед по линии движения
       for (let i = 0; i < remainingRoad.length - 1; i++) {
         const from = L.latLng(remainingRoad[i]);
         const to = L.latLng(remainingRoad[i + 1]);
@@ -833,12 +821,10 @@ function startRealNavigation(){
         }
       }
 
-      // Отрисовка сплошной навигационной стрелы
       if (arrowCoords.length >= 2) {
         L.polyline(arrowCoords, { className: 'nav-arrow-casing', interactive: false }).addTo(remainingRouteLayer);
         L.polyline(arrowCoords, { className: 'nav-arrow-main', interactive: false }).addTo(remainingRouteLayer);
 
-        // Наконечник по направлению движения
         const lastPts = [arrowCoords[arrowCoords.length - 2], arrowCoords[arrowCoords.length - 1]];
         const headAngle = getPixelBearing(lastPts[0], lastPts[1]);
 
