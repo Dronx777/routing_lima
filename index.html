@@ -385,7 +385,7 @@ function checkPointsInUserRadius(){
   csvData.forEach((p)=>{
     if(p.status === "0"){
       const d = L.latLng(userCoords).distanceTo([p.lat, p.lon]);
-      if(d <= 50){
+      if(d <= 20){
         p.status = "1";
         if(p.marker){
           p.marker.setStyle({ color: 'green', fillColor: 'green' });
@@ -411,7 +411,7 @@ function updateUserPosition(pos){
   }
 
   if(!userRadius) {
-    userRadius = L.circle(userCoords,{radius:50,color:'black',weight:1,fillOpacity:0}).addTo(map);
+    userRadius = L.circle(userCoords,{radius:20,color:'black',weight:1,fillOpacity:0}).addTo(map);
   } else {
     userRadius.setLatLng(userCoords);
   }
