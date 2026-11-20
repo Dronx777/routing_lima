@@ -190,7 +190,7 @@ textarea{resize:none;font-size:13px;}
   </button>
 </div>
 
-<div id="version-label">версия 4.2 (красные дороги GeoJSON)</div>
+<div id="version-label">версия 4.3 (слой service_roads)</div>
 
 <script>
 const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
@@ -202,8 +202,9 @@ let csvMarkersLayer = L.layerGroup().addTo(map);
 let routeLayer = L.layerGroup().addTo(map);
 let remainingRouteLayer = L.layerGroup().addTo(map);
 let recordedTrackLayer = L.layerGroup().addTo(map);
-let polygonLayer = L.layerGroup(); // По умолчанию выключен
-let roadsLayer = L.layerGroup();   // Слой дорог из GeoJSON (по умолчанию выключен)
+let polygonLayer = L.layerGroup();     // H3 Гексагоны (по умолчанию выключен)
+let roadsLayer = L.layerGroup();       // Основные дороги GeoJSON (по умолчанию выключен)
+let serviceRoadsLayer = L.layerGroup();// Дворовые/сервисные проезды GeoJSON (по умолчанию выключен)
 
 let pointsPartLayer = L.layerGroup();
 let pointsPart2Layer = L.layerGroup();
@@ -215,6 +216,7 @@ const overlays = {
   "Навигация": remainingRouteLayer,
   "Записанный трек": recordedTrackLayer,
   "Дороги (GeoJSON)": roadsLayer,
+  "Сервисные проезды (пунктир)": serviceRoadsLayer,
   "H3 Гексагоны (корень)": polygonLayer,
   "Точки (1_part)": pointsPartLayer,
   "Точки (2_part)": pointsPart2Layer,
@@ -254,7 +256,7 @@ fetch('hex.geojson')
   .then(data => renderGeoJson(data))
   .catch(err => console.warn('Автозагрузка hex.geojson недоступна:', err));
 
-// Отрисовка слоя дорог из GeoJSON красным цветом
+// Отрисовка слоя основных дорог из GeoJSON красным цветом
 function renderRoadsGeoJson(geoData) {
   roadsLayer.clearLayers();
   L.geoJSON(geoData, {
@@ -287,6 +289,57 @@ fetch('roads_in_hex.geojson')
   })
   .then(data => renderRoadsGeoJson(data))
   .catch(err => console.warn('Автозагрузка roads_in_hex.geojson недоступна:', err));
+
+// Отрисовка слоя service_roads (белая обводка + чёрный точечный пунктир)
+function renderServiceRoadsGeoJson(geoData) {
+  serviceRoadsLayer.clearLayers();
+
+  // 1. Нижний слой: широкая белая полоса-подложка
+  L.geoJSON(geoData, {
+    style: {
+      color: '#ffffff',
+      weight: 7,
+      opacity: 0.95,
+      lineCap: 'round',
+      lineJoin: 'round'
+    },
+    interactive: false
+  }).addTo(serviceRoadsLayer);
+
+  // 2. Верхний слой: чёрный точечный пунктир с попапом
+  L.geoJSON(geoData, {
+    style: {
+      color: '#000000',
+      weight: 2.5,
+      opacity: 0.95,
+      dashArray: '1, 6',
+      lineCap: 'round',
+      lineJoin: 'round'
+    },
+    onEachFeature: function(feature, layer) {
+      if (feature.properties) {
+        const p = feature.properties;
+        let popupText = `<b>Проезд:</b> ${p.name || 'Service road'}<br>`;
+        popupText += `<b>Тип (highway):</b> ${p.highway || 'service'}<br>`;
+        if (p.distance !== undefined && p.distance !== null) {
+          popupText += `<b>Длина:</b> ${p.distance} м<br>`;
+        }
+        if (p.osm_id) {
+          popupText += `<b>OSM ID:</b> ${p.osm_id}`;
+        }
+        layer.bindPopup(popupText);
+      }
+    }
+  }).addTo(serviceRoadsLayer);
+}
+
+fetch('service_roads.geojson')
+  .then(res => {
+    if(!res.ok) throw new Error('Файл service_roads.geojson не найден в корне');
+    return res.json();
+  })
+  .then(data => renderServiceRoadsGeoJson(data))
+  .catch(err => console.warn('Автозагрузка service_roads.geojson недоступна:', err));
 
 function renderColoredPoints(geoData, layer, color, fillColor) {
   layer.clearLayers();
@@ -579,7 +632,6 @@ function buildOptimizedRoute(){
       infoDistanceEl.textContent = `Длина: ${distanceKm} км`;
       const totalMinutes = Math.round(trip.duration/60);
       infoDurationEl.textContent = totalMinutes<60?`${totalMinutes} мин`:`${Math.floor(totalMinutes/60)} ч ${totalMinutes%60} мин`;
-      // Зум и положение карты не сбрасываются при пересчете
     })
     .catch(err=>{ alert('Ошибка OSRM'); console.error(err); });
 }
@@ -755,6 +807,7 @@ document.getElementById('clearBtn').addEventListener('click',()=>{
   routeLayer.clearLayers(); 
   polygonLayer.clearLayers();
   roadsLayer.clearLayers();
+  serviceRoadsLayer.clearLayers();
   pointsPartLayer.clearLayers();
   pointsPart2Layer.clearLayers();
   pointsPart3Layer.clearLayers();
