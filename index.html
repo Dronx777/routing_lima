@@ -190,7 +190,7 @@ textarea{resize:none;font-size:13px;}
   </button>
 </div>
 
-<div id="version-label">версия 4.0 (сохранение зума)</div>
+<div id="version-label">версия 4.2 (красные дороги GeoJSON)</div>
 
 <script>
 const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
@@ -202,7 +202,8 @@ let csvMarkersLayer = L.layerGroup().addTo(map);
 let routeLayer = L.layerGroup().addTo(map);
 let remainingRouteLayer = L.layerGroup().addTo(map);
 let recordedTrackLayer = L.layerGroup().addTo(map);
-let polygonLayer = L.layerGroup(); // По умолчанию выключен (без addTo(map))
+let polygonLayer = L.layerGroup(); // По умолчанию выключен
+let roadsLayer = L.layerGroup();   // Слой дорог из GeoJSON (по умолчанию выключен)
 
 let pointsPartLayer = L.layerGroup();
 let pointsPart2Layer = L.layerGroup();
@@ -213,6 +214,7 @@ const overlays = {
   "Основной маршрут": routeLayer,
   "Навигация": remainingRouteLayer,
   "Записанный трек": recordedTrackLayer,
+  "Дороги (GeoJSON)": roadsLayer,
   "H3 Гексагоны (корень)": polygonLayer,
   "Точки (1_part)": pointsPartLayer,
   "Точки (2_part)": pointsPart2Layer,
@@ -251,6 +253,40 @@ fetch('hex.geojson')
   })
   .then(data => renderGeoJson(data))
   .catch(err => console.warn('Автозагрузка hex.geojson недоступна:', err));
+
+// Отрисовка слоя дорог из GeoJSON красным цветом
+function renderRoadsGeoJson(geoData) {
+  roadsLayer.clearLayers();
+  L.geoJSON(geoData, {
+    style: {
+      color: '#ff0000',
+      weight: 2.5,
+      opacity: 0.9
+    },
+    onEachFeature: function(feature, layer) {
+      if (feature.properties) {
+        const p = feature.properties;
+        let popupText = `<b>Дорога:</b> ${p.name || 'Без названия'}<br>`;
+        popupText += `<b>Тип (highway):</b> ${p.highway || '—'}<br>`;
+        if (p.distance !== undefined && p.distance !== null) {
+          popupText += `<b>Длина:</b> ${p.distance} м<br>`;
+        }
+        if (p.osm_id) {
+          popupText += `<b>OSM ID:</b> ${p.osm_id}`;
+        }
+        layer.bindPopup(popupText);
+      }
+    }
+  }).addTo(roadsLayer);
+}
+
+fetch('roads_in_hex.geojson')
+  .then(res => {
+    if(!res.ok) throw new Error('Файл roads_in_hex.geojson не найден в корне');
+    return res.json();
+  })
+  .then(data => renderRoadsGeoJson(data))
+  .catch(err => console.warn('Автозагрузка roads_in_hex.geojson недоступна:', err));
 
 function renderColoredPoints(geoData, layer, color, fillColor) {
   layer.clearLayers();
@@ -718,6 +754,7 @@ document.getElementById('clearBtn').addEventListener('click',()=>{
   csvMarkersLayer.clearLayers(); 
   routeLayer.clearLayers(); 
   polygonLayer.clearLayers();
+  roadsLayer.clearLayers();
   pointsPartLayer.clearLayers();
   pointsPart2Layer.clearLayers();
   pointsPart3Layer.clearLayers();
